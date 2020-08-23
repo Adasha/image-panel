@@ -1,6 +1,6 @@
 
 
-class PhotoFrame extends HTMLElement
+class ImagePanel extends HTMLElement
 {
     #shadow;
     #imgLoader = new Image();
@@ -13,16 +13,6 @@ class PhotoFrame extends HTMLElement
     #slideInterval;
     #transDur;
     #slideTemplate;
-    #slideStyle = `
-        background-repeat:   no-repeat;
-        background-position: center center;
-        background-size:     cover;
-        position: absolute;
-        left:   0;
-        right:  0;
-        bottom: 0;
-        top:    0;
-    `;
 
 
     static get observedAttributes() {
@@ -287,7 +277,7 @@ class PhotoFrame extends HTMLElement
     }
 }
 
-customElements.define('photo-frame', PhotoFrame);
+customElements.define('image-panel', ImagePanel);
 
 
 
