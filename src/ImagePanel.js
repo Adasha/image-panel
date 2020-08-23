@@ -67,18 +67,17 @@ class ImagePanel extends HTMLElement
 
     loadSlide(index)
     {
-        // console.log('Loading slide '+(index+1)+' of '+this.#imgArr.length);
-
+        index = Utils.constrain(index, 0, this.#imgArr.length-1);
 		var url = this.#masterPath + this.#imgArr[index].src;
 		this.#currImg = index;
-		//console.log('Slideshow: Attempting to load \"' + url + '\"');
 		this.#imgLoader.src = url;
 
     }
     
     prevSlide()
     {
-
+		this.#currImg = (--this.#currImg+this.#imgArr.length)%this.#imgArr.length;
+		this.loadSlide(this.#currImg);
     }
 
     nextSlide()
@@ -130,10 +129,8 @@ class ImagePanel extends HTMLElement
             case 'height' :
                 break;
             case 'interval' :
-                console.log('interval: '+newValue);
                 break;
             case 'fade-duration' :
-                console.log('fade-duration: '+newValue);
                 break;
             default:
         }
@@ -286,7 +283,7 @@ class ImagePanel extends HTMLElement
 
     #slideLoadingError(evt)
     {
-        console.log('[PhotoFrame] Image loading failed: \"'+evt.target.src+'\"');
+        console.log('[ImagePanel.js] Image loading failed: \"'+evt.target.src+'\"');
         this.nextSlide();
     }
 }
@@ -363,4 +360,18 @@ class Utils
 
         return array;
     }
+
+    static constrain = (num, min, max) => {
+        if (typeof num!=="number") {
+            return NaN;
+        }
+        if (min!==undefined && min!==null && typeof min==="number") {
+            num = Math.max(num, min);
+        }
+        if (max!==undefined && max!==null && typeof max==="number") {
+            num = Math.min(num, max);
+        }
+        return num;
+    };
+
 }
