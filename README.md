@@ -1,4 +1,4 @@
-# photoframe
+# image-panel
 yes this is another image viewer / photoframe / thing. Here's a few reason's this one deserves to exist:
 
 - It's a custom web component (bespoke HTML element) so it's trivial to use
