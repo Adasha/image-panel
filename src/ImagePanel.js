@@ -16,13 +16,12 @@ class ImagePanel extends HTMLElement
 
 
     static get observedAttributes() {
-        return ['data', 'width', 'height', 'interval'];
+        return ['data', 'width', 'height', 'interval', 'fade-duration'];
     }
 
     constructor(...args)
     {
         super(...args);
-        // console.log('Element constructed.');
 
         this.#shadow = this.attachShadow({mode: 'closed'});
         this.#imgLoader.addEventListener('load',  this.#slideLoaded.bind(this));
@@ -131,6 +130,10 @@ class ImagePanel extends HTMLElement
             case 'height' :
                 break;
             case 'interval' :
+                console.log('interval: '+newValue);
+                break;
+            case 'fade-duration' :
+                console.log('fade-duration: '+newValue);
                 break;
             default:
         }
@@ -184,6 +187,17 @@ class ImagePanel extends HTMLElement
     set interval(dur)
     {
         this.setAttribute('interval', dur);
+    }
+
+
+    get fadeDuration()
+    {
+        return this.getAttribute('fade-duration');
+    }
+
+    set fadeDuration(dur)
+    {
+        this.setAttribute('fade-duration', dur);
     }
 
 
@@ -257,7 +271,7 @@ class ImagePanel extends HTMLElement
             [
                 {opacity: '0'},
                 {opacity: '1'}
-            ], this.#transDur
+            ], this.fadeDuration || this.#transDur
         );
 
         fadeIn.addEventListener('finish', () => {
