@@ -9,4 +9,4 @@ This isn't aiming to be another image gallery viewer though - think of it more a
 
 This is alpha. It's a component-ised version of the slideshow viewer I've had on my own site for ages, and has plenty of shoddy code to prove it. Future versions will improve this and add some minimal extra functionality, but don't expect an all-singing, all-dancing featureset, this isn't meant for that.
 
-To use, add the /dist/PhotoFrame.js to your HTML and use the <photo-frame> element name. You need to set the 'data' attribute to point to a JSON file with the gallery information. Use the sample one as a guide until this README is improved.
+To use, add the /dist/PhotoFrame.js to your HTML and use the \<photo-frame\> element name. You need to set the 'data' attribute to point to a JSON file with the gallery information. Use the sample one as a guide until this README is improved.
