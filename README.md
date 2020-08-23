@@ -13,12 +13,12 @@ This is alpha. It's a component-ised version of the slideshow viewer I've had on
 
 ## Usage
 
-Embed the `dist/ImagePanel.js` file in your HTML (typically at the end of `\<body\>`):
+Embed the `dist/ImagePanel.js` file in your HTML (typically at the end of `<body>`):
 ```html
 <script src="pathto/ImagePanel.js"></script>
 ```
 
-Add a `\<image-panel\` element in the desired location. Set the `data` attribute to point to a JSON config file. Use the sample one in `test` as a guide until this README is improved.
+Add a `<image-panel>` element in the desired location. Set the `data` attribute to point to a JSON config file. Use the sample one in `test` as a guide until this README is improved.
 ```html
 <image-panel data="pathto/slideshow.json"></image-panel>
 ```
