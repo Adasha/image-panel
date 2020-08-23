@@ -1,0 +1,172 @@
+{
+	"masterPath":          "sample-images/",
+	"startingIndex":       0,
+	"shuffleSlides":       true,
+	"slideInterval":       6000,
+	"transitionDuration":  1000,
+	"slides": [
+		{
+			"title":       "Chinese street display Amsterdam NY 2008",
+			"src":         "Amsterdam-ChineseNY.jpg"
+		},
+		{
+			"title":       "Euro Pride - Amsterdam 2016",
+			"src":         "Amsterdam-Pride.jpg"
+		},
+		{
+			"title":       "Temple carving at Angkor",
+			"src":         "Angkor-Carving.jpg"
+		},
+		{
+			"title":       "Children sand doodling in Angkor",
+			"src":         "Angkor-kids-doodling.jpg",
+			"style":       "background-position: center 30%"
+		},
+		{
+			"title":       "Bayon temple faces",
+			"src":         "Bayon-faces.jpg",
+			"description": "The serene faces of the Buddha smile upon visitors to Bayon temple, Siem Reap.",
+			"style":       "transform: scaleX(-1); -webkit-transform: scaleX(-1); background-position: center 65%"
+		},
+		{
+			"title":       "",
+			"src":         "berlin_cherub.jpg",
+			"style":       "transform: scaleX(-1); -webkit-transform: scaleX(-1); background-position: left 20%"
+		},
+		{
+			"title":       "",
+			"src":         "berlin-library.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "brandenberg_gate.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "holocaust_memorial.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "BigPit-Beams.jpg",
+			"style":       "background-position: center 70%"
+		},
+		{
+			"title":       "",
+			"src":         "BigPit-CableMacro.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "BigPit-ChainMacro.jpg"
+		},
+		{
+			"title":       "Lumberyard at Big Pit",
+			"src":         "BigPit-Lumberyard.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "BigPit-Serial.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "Vietnam-Bike-in-paddy-field.jpg",
+			"style":       "transform: scaleX(-1)"
+		},
+		{
+			"title":       "",
+			"src":         "Sirmione-Birds.jpg"
+		},
+		{
+			"title":       "Fireworks",
+			"src":         "Swansea-Fireworks.jpg",
+			"description": "Taken out of our window one 5 November, back when our flat overlooked St. Helen's rugby ground in Swansea.",
+			"style":       "transform: scaleX(-1); -webkit-transform: scaleX(-1); background-position: center bottom"
+		},
+		{
+			"title":       "Hạ Long Bay boats at dawn",
+			"src":         "HaLongBay-Boats.jpg",
+			"style":       "background-position: center bottom"
+		},
+		{
+			"title":       "Hạ Long Bay",
+			"src":         "HaLong-Cave-entrance.jpg",
+			"style":       "background-position: center top"
+		},
+		{
+			"title":       "",
+			"src":         "KhaiDinh-Silhouette-Edit.jpg",
+			"description": "Khải Định, the 12th and last Emperor of the Nguyễn Dynasty in Vietnam, looks out from his temple at the realm that was once his."
+		},
+		{
+			"title":       "",
+			"src":         "LakeDistrict-Dusk-.jpg"
+		},
+		{
+			"title":       "Logs",
+			"src":         "BigPit-Logs.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "Markermeer.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "MekonDelta-Boat-ride.jpg",
+			"description": "Floating down the Mekong Delta, reminiscent of Willy Wonka's chocolate river.",
+			"style":       "background-position: center 30%"
+		},
+		{
+			"title":       "",
+			"src":         "Angkor-Monster.jpg",
+			"description": "A stylised snake head just a few inches across stares at you as you pass under a doorway in one of the temples in Siem Reap, Cambodia.",
+			"style":       "background-position: center 80%"
+		},
+		{
+			"title":       "",
+			"src":         "Amsterdam-Plug.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "ScaligerCastle-Morning.jpg",
+			"description": "The morning sun highlights the impressive Scaliger castle in Sirmione, Lake Garda.",
+			"style":       "transform: scaleX(-1); -webkit-transform: scaleX(-1); background-position: center 30%"
+		},
+		{
+			"title":       "",
+			"src":         "ScaligerCastle-Stairway.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "StDavid-Candles.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "ZaanseSchans-Windmill.jpg"
+		},
+		{
+			"title":       "Raft in Hạ Long Bay",
+			"src":         "HaLongBay-Woman-in-boat.jpg"
+		},
+		{
+			"title":       "Boat stall in Hạ Long Bay",
+			"src":         "HaLongBay-Woman-in-shop-boat.jpg",
+			"description": "In lieu of shopping malls, wherever you go in Vietnam somebody will set up a stall with a spread of goods for sale to tourists. The absence of dry land is no obstacle, as this woman who floated up to our junk boat in Hạ Long Bay demonstrated."
+		},
+		{
+			"title":       "",
+			"src":         "ZaanseSchans-Windmills.jpg"
+		},
+		{
+			"title":       "",
+			"src":         "ZaanseSchans-Boats.jpg",
+			"style":       "background-position: center 80%"
+		}
+	],
+	"unused": [
+		{
+			"title":       "",
+			"src":         "Vietnam-Bike-in-paddy-field-BW.jpg",
+			"description": "",
+			"style":       ""
+		}
+	]
+}
