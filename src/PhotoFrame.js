@@ -32,35 +32,53 @@ class PhotoFrame extends HTMLElement
     constructor(...args)
     {
         super(...args);
-        console.log('Element constructed.');
+        // console.log('Element constructed.');
 
         this.#shadow = this.attachShadow({mode: 'closed'});
         this.#imgLoader.addEventListener('load',  this.#slideLoaded.bind(this));
         this.#imgLoader.addEventListener('error', this.#slideLoadingError.bind(this));
 
-        this.style = `
-            display: block;
-            position: relative;
-            width:  100%;
-            height: 100%;
+        let style = document.createElement('style');
+        style.textContent = `
+            :host {
+                display: block;
+                position: relative;
+                height: 100%;
+            }
+            :host > div {
+                background-size: cover;
+                background-position: center center;
+                background-repeat: no-repeat;
+                position: absolute;
+                top: 0;
+                right: 0;
+                bottom: 0;
+                left: 0;
+            }
         `;
+        this.#shadow.appendChild(style);
+
+        this.#slideTemplate = document.createElement('div');
+        this.#slideTemplate.className = 'image-slide';
+
+
     }
 
 
     startSlideshow(index)
     {
-        console.log('Slideshow started.');
+        // console.log('Slideshow started.');
         this.loadSlide(index || 0);
     }
     
     stopSlideshow()
     {
-        console.log('Slideshow stopped.');
+        // console.log('Slideshow stopped.');
     }
 
     loadSlide(index)
     {
-        console.log('Loading slide '+(index+1)+' of '+this.#imgArr.length);
+        // console.log('Loading slide '+(index+1)+' of '+this.#imgArr.length);
 
 		var url = this.#masterPath + this.#imgArr[index].src;
 		this.#currImg = index;
@@ -80,7 +98,7 @@ class PhotoFrame extends HTMLElement
 		this.loadSlide(this.#currImg);
     }
 
-    pauseTimer()
+    pause()
     {
 		if(this.#timer)
         {
@@ -88,7 +106,7 @@ class PhotoFrame extends HTMLElement
 		}
     }
 
-    resumeTimer()
+    resume()
     {
 		if(this.#timer)
         {
@@ -98,25 +116,21 @@ class PhotoFrame extends HTMLElement
 
     connectedCallback()
     {
-        console.log('Element connected.');
+        // console.log('Element connected.');
 
         //this.#upgradeProperty('data');
 
-        this.#slideTemplate = document.createElement('div');
-        //this.#slideTemplate.textContent = '&nbsp;';
-        this.#slideTemplate.className = 'image-slide';
-        this.#slideTemplate.style = String(this.#slideStyle);
     }
 
     disconnectedCallback()
     {
-        console.log('Element disconnected.');
+        // console.log('Element disconnected.');
 
     }
 
     attributeChangedCallback(name, oldValue, newValue)
     {
-        console.log('Attribute changed: '+name+'. New value: '+newValue);
+        // console.log('Attribute changed: '+name+'. New value: '+newValue);
 
         switch(name)
         {
@@ -186,7 +200,7 @@ class PhotoFrame extends HTMLElement
 
     #loadData(url)
     {
-        console.log('Loading data from '+url);
+        // console.log('Loading data from '+url);
 
         let req = new XMLHttpRequest();
         req.onreadystatechange = () => {
@@ -208,7 +222,7 @@ class PhotoFrame extends HTMLElement
 
     #dataLoaded(data)
     {
-        console.log('Data loaded successfully.');
+        // console.log('Data loaded successfully.');
 
 		this.#imgArr        = (Array.isArray(data)) ? data : data.slides;
 		this.#masterPath    = data.masterPath         || '';
@@ -230,7 +244,7 @@ class PhotoFrame extends HTMLElement
 
     #slideLoaded(evt)
     {
-        console.log('Slide loaded.');
+        // console.log('Slide loaded.');
 
 		let oldSlide = this.#shadow.querySelector('*.image-slide'),
 			newSlide = this.#slideTemplate.cloneNode(true),
@@ -238,18 +252,9 @@ class PhotoFrame extends HTMLElement
 		
         newSlide.setAttribute('style', img.style || '');
 		newSlide.style.backgroundImage = 'url(' + (this.#masterPath + img.src) + ')';
-		//newSlide.style.opacity         = '1';
-        newSlide.style.position = 'absolute';
-        newSlide.style.top = '0';
-        newSlide.style.right = '0';
-        newSlide.style.bottom = '0';
-        newSlide.style.left = '0';
-        newSlide.style.backgroundRepeat = 'no-repeat';
-        newSlide.style.backgroundSize = 'cover';
 
         if(oldSlide)
         {
-            oldSlide.style.opacity = '1';
             oldSlide.style.zIndex = '-1';
             newSlide.style.zIndex = '1';
         }
@@ -262,23 +267,22 @@ class PhotoFrame extends HTMLElement
             [
                 {opacity: '0'},
                 {opacity: '1'}
-            ], this.interval
+            ], this.#transDur
         );
 
         fadeIn.addEventListener('finish', () => {
-            console.log(newSlide.style.opacity);
 			if (oldSlide)
             {
 				this.#shadow.removeChild(oldSlide);
 			}
-			this.#timer = new Timer(this.nextSlide.bind(this), this.#slideInterval);
+			this.#timer = new Timer(this.nextSlide.bind(this), this.interval || this.#slideInterval);
         });
 		
     }
 
     #slideLoadingError(evt)
     {
-        console.log('[Slideshow] Image loading failed: \"'+evt.target.src+'\"');
+        console.log('[PhotoFrame] Image loading failed: \"'+evt.target.src+'\"');
         this.nextSlide();
     }
 }
