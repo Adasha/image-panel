@@ -1,24 +1,22 @@
 {
   "name": "image-panel",
-  "version": "0.3.3a",
+  "version": "0.3.4a",
   "author": "Adam Shailer",
+  "description": "Minimalist image viewer web component.",
   "license": "MPL-2.0",
-  "scripts": {
-    "build": "gulp build",
-    "test": "echo \"Error: no test specified\" && exit 1"
-  },
+  "dependencies": {},
   "devDependencies": {
-    "@babel/core": "^7.11.1",
-    "@babel/preset-env": "^7.11.0",
+    "@babel/cli": "^7.14.3",
+    "@babel/core": "^7.14.3",
+    "@babel/preset-env": "^7.14.4",
     "gulp": "^4.0.2",
     "gulp-babel": "^8.0.0",
     "gulp-rename": "^2.0.0",
     "gulp-sass": "^4.1.0",
     "gulp-uglify": "^3.0.2"
   },
-  "dependencies": {
-    "@babel/plugin-proposal-class-properties": "^7.10.4",
-    "@babel/plugin-proposal-private-methods": "^7.10.4"
-  },
-  "description": "Minimalist image viewer web component."
+  "scripts": {
+    "build": "gulp build",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  }
 }
