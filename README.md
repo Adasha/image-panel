@@ -1,4 +1,7 @@
 # image-panel
+
+v0.3.5a
+
 Yes this is another image viewer / photoframe / thing. Here's a few reason's this one deserves to exist:
 
 - It's a custom web component (bespoke HTML element) so you don't have to use Javascript.
@@ -19,7 +22,8 @@ Embed the `dist/ImagePanel.js` file in your HTML (typically at the end of `<body
 <script src="pathto/ImagePanel.js"></script>
 ```
 
-Add a `<image-panel>` element in the desired location. Set the `data` attribute to point to a JSON config file. Use the sample one in `test` as a guide until this README is improved.
+Add a `<image-panel>` element in the desired location. Set the `data` attribute to point to a JSON config file. Use the sample one in `tests` as a guide until this README is improved.
+
 ```html
 <image-panel data="pathto/slideshow.json"></image-panel>
 ```

@@ -1,4 +1,18 @@
+/*
+ * ImagePanel component by Adasha
+ * Licensed under ????
+ * Repository: https://github.com/Adasha/image-panel
+ * Demos: http://adasha.com/lab/components/image-panel/index.html
+ */
 
+
+
+/**
+ * @class ImagePanel
+ * @extends HTMLElement
+ * @version 0.3.5a
+ * @author Adam Shailer <adasha76@outlook.com>
+ */
 
 class ImagePanel extends HTMLElement
 {
