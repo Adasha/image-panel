@@ -2,7 +2,7 @@
 
 v0.3.5a
 
-Yes this is another image viewer / photoframe / thing. Here's a few reason's this one deserves to exist:
+Yes this is another image viewer / photoframe / thing. Here's a few reasons this one deserves to exist:
 
 - It's a custom web component (bespoke HTML element) so you don't have to use Javascript.
 - Uses a separate config file to update without having to republish your page (nested img support & folder loading are on roadmap)
