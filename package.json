@@ -4,7 +4,6 @@
   "author": "Adam Shailer",
   "description": "Minimalist image viewer web component.",
   "license": "MPL-2.0",
-  "dependencies": {},
   "devDependencies": {
     "@babel/cli": "^7.16.0",
     "@babel/core": "^7.16.5",
@@ -12,7 +11,7 @@
     "gulp": "^4.0.2",
     "gulp-babel": "^8.0.0",
     "gulp-rename": "^2.0.0",
-    "gulp-sass": "^4.1.0",
+    "gulp-sass": "^5.1.0",
     "gulp-uglify": "^3.0.2"
   },
   "scripts": {
