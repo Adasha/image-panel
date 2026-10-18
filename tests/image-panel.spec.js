@@ -239,6 +239,20 @@ test.describe('navigation', () => {
         expect((await events(page)).map(e => [e.type, e.detail.index])).toEqual([['slidechange', 1], ['slidechange', 2], ['slidechangeend', 2]]);
     });
 
+    test('fades the outgoing slide out while the next fades in', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="1000"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide').length)).toBe(1);
+
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide').length)).toBe(2);
+        await page.waitForTimeout(300);
+        const [outgoing, incoming] = await panel.evaluate(el =>
+            [...el.shadowRoot.querySelectorAll('.slide')].map(s => Number(getComputedStyle(s).opacity)));
+        expect(outgoing).toBeLessThan(1);
+        expect(incoming).toBeGreaterThan(0);
+    });
+
     test('rapid navigation during transitions leaves a single slide', async ({page}) => {
         const panel = await mount(page, '<image-panel transition-duration="300"></image-panel>');
         await setConfig(panel, IMAGES);

@@ -44,6 +44,13 @@ template.innerHTML = `
         position: absolute;
         inset: 0;
     }
+    .slides {
+        isolation: isolate;
+    }
+    .slide {
+        /* Opacities add rather than layer, so a cross-fade stays solid where slides overlap */
+        mix-blend-mode: plus-lighter;
+    }
     img {
         display: block;
         width: 100%;
@@ -618,8 +625,14 @@ export class ImagePanel extends HTMLElement
         slide.setAttribute('part', 'slide');
         slide.append(img);
 
-        // Snap any in-progress transition to its end before starting the next
+        // Snap any in-progress transition to its end before starting the next,
+        // leaving only the slide on screen to fade out
         this.#anim?.finish();
+        const outgoing = this.#stage.lastElementChild;
+        while (outgoing?.previousElementSibling)
+        {
+            outgoing.previousElementSibling.remove();
+        }
         this.#stage.append(slide);
 
         const previousIndex = this.#index;
@@ -647,6 +660,9 @@ export class ImagePanel extends HTMLElement
         }
         if (duration > 0)
         {
+            // Fade the old slide out too, so nothing it shows outside the new one (e.g. with
+            // object-fit: contain) lingers and then vanishes
+            outgoing?.animate([{opacity: 1}, {opacity: 0}], {duration, fill: 'forwards'});
             const anim = this.#anim = slide.animate([{opacity: 0}, {opacity: 1}], {duration});
             await anim.finished.catch(() => {});
             if (this.#anim === anim) this.#anim = null;
