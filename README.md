@@ -4,8 +4,8 @@ A small, dependency-free image viewer web component. It shows one image at a tim
 
 It's not trying to be a gallery. It's the viewport part of one, so it fits into slideshows, hero banners, lightboxes, kiosks and other media apps.
 
-- About 9 KB minified, under 4 KB gzipped.
-- Accessible by default: real `<img>` elements with alt text, carousel semantics, and announcements when someone navigates. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
+- About 10 KB minified, around 4 KB gzipped.
+- Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
 - Careful with resources:
   - Nothing loads until the panel is near the viewport.
   - Rotation stops while the tab is hidden.
@@ -100,6 +100,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `fit` | `fit` | `cover` | Default `object-fit` for slides. |
 | `position` | `position` | `center` | Default `object-position` for slides. |
 | `sizes` | `sizes` | panel width | Default `sizes` for slides with a `srcset`. |
+| `motion` | `motion` | none | Default [motion](#motion) for slides without their own: `"random"`, `"none"`, or a motion spec (config and JS only). |
 | | `keyboard` | off | Arrow keys, Home and End navigate. Makes the panel focusable. |
 | | `pause-on-hover` | off | Hold auto-advance while the pointer is over the panel. |
 | | `src` | | URL of a JSON config. |
@@ -119,14 +120,54 @@ A slide can be a plain URL string, or an object with these fields. Child images 
 | `flip` | | `horizontal`, `vertical` or `both`. |
 | `transform` | | Any CSS transform, e.g. `"scale(1.2) rotate(-4deg)"`. Applied before `flip`. |
 | `clip` | | Any CSS `clip-path`, e.g. `"inset(5% round 8px)"`. |
+| `motion` | | A slow pan or zoom over the slide's time on screen: `"random"` or a motion spec. See [Motion](#motion). `false` or `"none"` turns off a panel-wide default. |
 | `style` | | Raw inline CSS for the `<img>`, for anything else. The fields above take priority. |
 
 Any other fields you add are kept and passed back to you in events.
+
+### Motion
+
+`motion` moves a slide while it's on screen. It's a list of CSS transforms, spread evenly from the moment the slide starts fading in to the moment it finishes fading out (`transitionDuration + interval + transitionDuration`):
+
+```json
+{"src": "boat.jpg", "motion": ["scale(1.15) translate(-3%, 2%)", "scale(1)"]}
+```
+
+Or an object, to add an easing (default `linear`):
+
+```json
+{"src": "boat.jpg", "motion": {"from": "scale(1)", "to": "scale(1.2) translate(4%, 0)", "easing": "ease-in-out"}}
+```
+
+`{"keyframes": [...], "easing": "..."}` takes a list in the same way.
+
+`"random"` picks a gentle zoom in or out between two random points, fresh each time the slide shows, and never far enough to reveal the panel edges.
+
+A panel-wide default applies to every slide without its own `motion`, and `"motion": false` (or `"none"`) on a slide keeps it still. Set the default any of these ways, highest priority first:
+
+```js
+panel.motion = {from: 'scale(1)', to: 'scale(1.1)'};  // any spec, from JavaScript
+panel.motion = 'random';                               // strings are reflected to the attribute
+```
+```html
+<image-panel motion="random"></image-panel>
+```
+```json
+{"motion": "random", "slides": ["…"]}
+```
+
+Changing it affects the next slide shown, not the current one. Set `panel.motion = null` to fall back to the config.
+
+- The transforms apply to the slide wrapper (`::part(slide)`), in panel coordinates, so they combine with the image's own `transform` and `flip` rather than replacing them. Translating by a percentage moves by that much of the panel.
+- Zoom in rather than out (scale ≥ 1 throughout), or the panel background shows at the edges.
+- Motion only runs while the panel is playing: it freezes with `pause()` and whenever auto-advance is held (focus, hover, hidden or offscreen), and it holds on its last frame if the slide outlives it. Without `autoplay`, slides stay still.
+- It's turned off entirely when the user prefers reduced motion.
 
 ## JavaScript API
 
 | | |
 | --- | --- |
+| `motion` | Default slide motion. See [Motion](#motion). |
 | `play()`, `pause()` | Start or stop auto-advancing. Without `loop`, `play()` on the last slide starts over from the first. |
 | `next()`, `prev()` | Move one slide, wrapping round if `loop` is on. Repeated calls queue up rather than waiting for each image. |
 | `goTo(index)` | Show a specific slide. Out-of-range indexes wrap if `loop` is on, and are ignored otherwise. |
@@ -139,13 +180,50 @@ Each attribute also has a matching property: `src`, `interval`, `transitionDurat
 
 ### Events
 
+All events are `CustomEvent`s dispatched on the panel. They don't bubble.
+
+Every event's `detail` includes a `trigger` saying what caused it:
+
+| `trigger` | Cause |
+| --- | --- |
+| `'start'` | The panel starting up: the first slide shown after slides load, and `autoplay` starting playback. |
+| `'auto'` | The panel acting on its own: auto-advance, preloading the next slide, and playback ending. |
+| `'keyboard'` | Arrow keys, Home or End. |
+| `'api'` | Your code: methods like `next()` or `play()`, and setting `src`, `config`, `interval` or child images. |
+| `'focus'`, `'hover'`, `'hidden'`, `'offscreen'` | A hold starting or ending: focus in the panel, hover with `pause-on-hover`, the tab being hidden, or the panel scrolling out of view. |
+
+Events that follow from an earlier action keep its trigger. For example, after pressing →, the image load, `slidechange` and the restarted `countdown` all report `'keyboard'`. The tables below list each event's other `detail` fields.
+
+**Loading**
+
 | Event | `detail` | |
 | --- | --- | --- |
-| `ready` | `{length}` | Slides loaded (from any source). |
-| `slidechange` | `{index, previousIndex, slide}` | A new slide has started to show. |
-| `slideerror` | `{index, slide}` | An image failed to load. It's skipped from then on. |
+| `configloadstart` | `{url}` | Started fetching the `src` JSON. |
+| `ready` | `{length}` | Slides are known (from any source) and about to start showing. |
 | `error` | `{error}` | The config failed to load, or none of the images could. |
-| `play`, `pause` | | Playback state changed. |
+| `slideloadstart` | `{index, slide, preload}` | An image started loading. `preload` is true for the background preload of the next slide. |
+| `slideload` | `{index, slide}` | An image loaded and decoded. |
+| `slideerror` | `{index, slide}` | An image failed to load. It's skipped from then on. |
+
+**Navigation**, in the order they fire:
+
+| Event | `detail` | |
+| --- | --- | --- |
+| `navigate` | `{index, previousIndex}` | Heading for a new slide, before its image is ready. `index` can change if that image fails. |
+| `loop` | `{index, previousIndex}` | The change wrapped round from one end to the other. |
+| `slidechange` | `{index, previousIndex, slide}` | The new slide is starting to show. `currentIndex` is already updated. |
+| `slidechangeend` | as `slidechange` | The new slide has finished transitioning in (straight away with reduced motion or `transition-duration="0"`). Not fired if another slide interrupts the transition. |
+
+**Playback**
+
+| Event | `detail` | |
+| --- | --- | --- |
+| `play` | | Auto-advance turned on. |
+| `pause` | | Auto-advance turned off, by `pause()` or by reaching the end. |
+| `ended` | | Auto-advance reached the last slide without `loop`. Follows `pause`. |
+| `hold` | | Auto-advance is held while still playing. `trigger` gives the cause. |
+| `resume` | | The last hold was released and auto-advance carries on. `trigger` is the hold that was released last. |
+| `countdown` | `{remaining, interval}` | The timer to the next slide started, or resumed with `remaining` ms left. Useful for progress indicators. |
 
 A minimal set of controls:
 
@@ -160,15 +238,23 @@ See [demo/index.html](demo/index.html) for a fuller example.
 
 The component renders into an open shadow root.
 
-- `::part(slide)` targets the wrapper that fades, and `::part(image)` the `<img>` inside it.
+- `::part(slide)` targets the wrapper that fades and carries any `motion`, and `::part(image)` the `<img>` inside it.
 - `--image-panel-fit` and `--image-panel-position` set the default `object-fit` and `object-position`.
 
 ## Accessibility
 
 - The panel is exposed as a group with the role description "carousel". Give it a name with `aria-label`. If it's purely decorative, use `aria-hidden="true"` and empty `alt`s.
-- Manual slide changes are announced politely ("Slide 2 of 5: …"). Changes made by auto-advance are not, following the WAI-ARIA carousel pattern.
+- Nothing is announced to screen readers, since any wording or counter is UI and yours to choose. To announce slide changes, use a polite live region of your own and update it from `slidechange`. Skip changes that auto-advance or the initial load caused, following the WAI-ARIA carousel pattern:
+
+  ```js
+  panel.addEventListener('slidechange', ({detail}) => {
+      if (detail.trigger === 'auto' || detail.trigger === 'start') return;
+      status.textContent = `Slide ${detail.index + 1} of ${panel.length}`;
+  });
+  ```
 - Auto-advance is off unless you ask for it. When it's on, add your own pause control: WCAG 2.2.2 requires a way to stop content that moves on its own. Focusing the panel holds it, and `pause-on-hover` holds it on hover too.
-- With `prefers-reduced-motion: reduce`, slides change instantly.
+- With `prefers-reduced-motion: reduce`, slides change instantly and `motion` is ignored.
+- `motion` stops whenever auto-advance does, so the same pause control covers both.
 
 ## Migrating from 0.3
 

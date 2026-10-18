@@ -4,6 +4,7 @@
 	"shuffle": false,
 	"interval": 5000,
 	"transitionDuration": 1000,
+	"motion": "random",
 	"slides": [
 		{
 			"src": "HaLongBay-Woman-in-shop-boat.jpg",
@@ -16,11 +17,13 @@
 			"title": "Khải Định",
 			"alt": "Silhouette of the statue of Emperor Khải Định against a window of bright blue sky.",
 			"description": "Khải Định, the 12th and last Emperor of the Nguyễn Dynasty in Vietnam, looks out from his temple at the realm that was once his.",
-			"position": "center 30%"
+			"position": "center 30%",
+			"motion": {"from": "scale(1.15) translate(0, 3%)", "to": "scale(1)", "easing": "ease-out"}
 		},
 		{
 			"src": "Markermeer.jpg",
 			"title": "Markermeer",
+			"motion": ["scale(1.1) translate(4%, 0)", "scale(1.1) translate(-4%, 0)"],
 			"alt": "A lone white sail on the horizon of a flat, grey lake beneath heavy storm clouds.",
 			"flip": "horizontal"
 		},
@@ -28,7 +31,8 @@
 			"src": "BigPit-ChainMacro.jpg",
 			"title": "Chains, Big Pit",
 			"alt": "Close-up of heavy, rust-covered chain links hanging side by side.",
-			"transform": "scale(1.2) rotate(-4deg)"
+			"transform": "scale(1.2) rotate(-4deg)",
+			"motion": false
 		},
 		{
 			"src": "holocaust_memorial.jpg",
