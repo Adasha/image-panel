@@ -160,6 +160,38 @@ test.describe('navigation', () => {
         await expect(panel.locator('.slide')).toHaveCount(1);
     });
 
+    test('without loop, navigation stops at either end', async ({page}) => {
+        const panel = await mount(page, '<image-panel loop="false" keyboard transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+
+        await panel.evaluate(el => el.prev());
+        await panel.evaluate(el => el.goTo(-1));
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(0);
+
+        await panel.evaluate(el => el.goTo(2));
+        await expect.poll(() => currentIndex(panel)).toBe(2);
+        await panel.evaluate(el => el.next());
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(2);
+
+        await panel.evaluate(el => el.loop = true);
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+    });
+
+    test('loop can be turned off from config', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        await setConfig(panel, {loop: false, slides: IMAGES});
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        expect(await panel.evaluate(el => el.loop)).toBe(false);
+
+        // The attribute takes priority
+        await panel.evaluate(el => el.setAttribute('loop', ''));
+        expect(await panel.evaluate(el => el.loop)).toBe(true);
+    });
+
     test('keyboard navigation, focusable only when enabled', async ({page}) => {
         const panel = await mount(page, '<image-panel keyboard transition-duration="0"></image-panel>');
         await setConfig(panel, IMAGES);
@@ -191,6 +223,29 @@ test.describe('playback', () => {
         await page.waitForTimeout(400);
         expect(await currentIndex(panel)).toBe(index);
         expect(await panel.evaluate(el => el.playing)).toBe(false);
+    });
+
+    test('without loop, autoplay pauses on the last slide and play() starts over', async ({page}) => {
+        const panel = await mount(page, '<image-panel autoplay loop="false" interval="100" transition-duration="0"></image-panel>');
+        await record(panel, 'pause');
+        await setConfig(panel, IMAGES);
+
+        await expect.poll(() => events(page)).toHaveLength(1);
+        expect(await currentIndex(panel)).toBe(2);
+        expect(await panel.evaluate(el => el.playing)).toBe(false);
+
+        await panel.evaluate(el => el.play());
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+    });
+
+    test('without loop, a failing last image ends playback on the slide before', async ({page}) => {
+        const panel = await mount(page, '<image-panel autoplay loop="false" interval="100" transition-duration="0"></image-panel>');
+        await record(panel, 'pause', 'error');
+        await setConfig(panel, [IMAGES[0], IMAGES[1], '/missing.jpg']);
+
+        await expect.poll(() => events(page)).toHaveLength(1);
+        expect((await events(page))[0].type).toBe('pause');
+        expect(await currentIndex(panel)).toBe(1);
     });
 
     test('manual navigation restarts the countdown instead of adding a second timer', async ({page}) => {

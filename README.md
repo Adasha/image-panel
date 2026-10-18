@@ -77,6 +77,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
     "interval": 6000,
     "transitionDuration": 1000,
     "shuffle": false,
+    "loop": true,
     "startIndex": 0,
     "fit": "cover",
     "position": "center",
@@ -94,6 +95,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `interval` | `interval` | `6000` | Milliseconds each slide is shown for, after its transition finishes. |
 | `transitionDuration` | `transition-duration` | `1000` | Cross-fade length in ms. `0` for a hard cut. Always `0` when the user prefers reduced motion. |
 | `shuffle` | `shuffle` | off | Shuffle the slides when loaded. |
+| `loop` | `loop` | on | Wrap round from the last slide to the first, and back. Set `loop="false"` to stop at the ends: autoplay then pauses on the last slide. |
 | `startIndex` | `start-index` | `0` | First slide to show. |
 | `fit` | `fit` | `cover` | Default `object-fit` for slides. |
 | `position` | `position` | `center` | Default `object-position` for slides. |
@@ -125,15 +127,15 @@ Any other fields you add are kept and passed back to you in events.
 
 | | |
 | --- | --- |
-| `play()`, `pause()` | Start or stop auto-advancing. |
-| `next()`, `prev()` | Move one slide, wrapping round. Repeated calls queue up rather than waiting for each image. |
-| `goTo(index)` | Show a specific slide. |
+| `play()`, `pause()` | Start or stop auto-advancing. Without `loop`, `play()` on the last slide starts over from the first. |
+| `next()`, `prev()` | Move one slide, wrapping round if `loop` is on. Repeated calls queue up rather than waiting for each image. |
+| `goTo(index)` | Show a specific slide. Out-of-range indexes wrap if `loop` is on, and are ignored otherwise. |
 | `currentIndex`, `currentSlide` | The slide on screen (`-1`/`null` before the first one). |
 | `length`, `slides` | Number of slides, and a copy of the slide list. |
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transitionDuration`, `autoplay`, `shuffle`, `startIndex`, `fit`, `position`, `sizes`, `keyboard`, `pauseOnHover`.
+Each attribute also has a matching property: `src`, `interval`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `keyboard`, `pauseOnHover`.
 
 ### Events
 

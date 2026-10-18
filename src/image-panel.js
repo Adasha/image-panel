@@ -21,7 +21,7 @@ const KEYS = {
 };
 
 const UPGRADABLE = [
-    'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle',
+    'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
     'startIndex', 'fit', 'position', 'sizes', 'keyboard', 'pauseOnHover',
 ];
 
@@ -206,6 +206,12 @@ export class ImagePanel extends HTMLElement
         this.#tick();
         this.#updateLive();
         this.#emit('play');
+
+        // Like a media element, playing again from the end starts over
+        if (this.#atEnd())
+        {
+            this.goTo(0);
+        }
     }
 
     /** Stop auto-advancing. The current slide stays visible. */
@@ -218,23 +224,24 @@ export class ImagePanel extends HTMLElement
         this.#emit('pause');
     }
 
-    /** Show the next slide, wrapping round at the end. */
+    /** Show the next slide, wrapping round at the end if `loop` is on. */
     next()
     {
-        this.#show(this.#target + 1, 1);
+        this.#step(1);
     }
 
-    /** Show the previous slide, wrapping round at the start. */
+    /** Show the previous slide, wrapping round at the start if `loop` is on. */
     prev()
     {
-        this.#show(this.#target - 1, -1);
+        this.#step(-1);
     }
 
-    /** Show the slide at the given index. */
+    /** Show the slide at the given index. Out-of-range indexes wrap if `loop` is on, and are ignored otherwise. */
     goTo(index)
     {
         index = Math.trunc(Number(index));
         if (!Number.isFinite(index) || (index === this.#index && !this.#busy)) return;
+        if (!this.loop && (index < 0 || index >= this.#slides.length)) return;
         this.#show(index, 1);
     }
 
@@ -270,6 +277,14 @@ export class ImagePanel extends HTMLElement
 
     get shuffle() { return this.hasAttribute('shuffle') || !!this.#config.shuffle; }
     set shuffle(value) { this.toggleAttribute('shuffle', !!value); }
+
+    /** Wrap round from the last slide to the first, and back. On unless set to `"false"`. */
+    get loop()
+    {
+        const attr = this.getAttribute('loop');
+        return attr === null ? this.#config.loop !== false : attr !== 'false';
+    }
+    set loop(value) { this.setAttribute('loop', String(!!value)); }
 
     get startIndex() { return toNumber(this.getAttribute('start-index')) ?? toNumber(this.#config.startIndex) ?? 0; }
     set startIndex(index) { this.setAttribute('start-index', index); }
@@ -440,32 +455,48 @@ export class ImagePanel extends HTMLElement
         this.#preload = this.#createImage(next, 'low');
     }
 
-    #nextLoadable(index, step)
+    #nextLoadable(index, step, wrap = this.loop)
     {
         const length = this.#slides.length;
         for (let tries = 0; tries < length; tries++, index += step)
         {
+            if (!wrap && (index < 0 || index >= length)) break;
             const wrapped = ((index % length) + length) % length;
             if (!this.#failed.has(wrapped)) return wrapped;
         }
         return -1;
     }
 
+    /** True when showing the last loadable slide and not looping. */
+    #atEnd()
+    {
+        return this.#index >= 0 && !this.#busy && !this.loop && this.#nextLoadable(this.#index + 1, 1) === -1;
+    }
+
 
 
     // Display
+
+    #step(step)
+    {
+        // Without looping, stepping off either end does nothing
+        if (!this.loop && this.#nextLoadable(this.#target + step, step) === -1) return;
+        this.#show(this.#target + step, step);
+    }
 
     async #show(index, step)
     {
         if (!this.#slides.length) return;
 
+        // The first slide may wrap round to find one that loads, even without looping
+        const wrap = this.loop || this.#index < 0;
         const navId = ++this.#navId;
         this.#busy = true;
         this.#clearTimer();
         this.#remaining = null;
 
         let target;
-        while ((target = this.#nextLoadable(index, step)) !== -1)
+        while ((target = this.#nextLoadable(index, step, wrap)) !== -1)
         {
             this.#target = target;
             const pending = this.#preload?.index === target
@@ -489,6 +520,13 @@ export class ImagePanel extends HTMLElement
 
         this.#busy = false;
         this.#target = this.#index;
+
+        // Ran off the end without looping: stay on the current slide
+        if (!wrap)
+        {
+            this.pause();
+            return;
+        }
         this.#fail(new Error('No slides could be loaded'));
     }
 
@@ -566,7 +604,7 @@ export class ImagePanel extends HTMLElement
         this.#timer = setTimeout(() => {
             this.#timer = 0;
             this.#remaining = null;
-            this.next();
+            this.#atEnd() ? this.pause() : this.next();
         }, this.#remaining);
     }
 
