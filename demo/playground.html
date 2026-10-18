@@ -1,0 +1,910 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>image-panel playground</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+            --gap: 1rem;
+            --border: color-mix(in srgb, CanvasText 18%, transparent);
+            --muted: color-mix(in srgb, CanvasText 60%, transparent);
+        }
+        body {
+            max-width: 80rem;
+            margin: 0 auto;
+            padding: var(--gap);
+            background: Canvas;
+            color: CanvasText;
+        }
+        h1 {
+            margin-block: 0 0.25rem;
+        }
+        .intro {
+            margin-block: 0 var(--gap);
+            color: var(--muted);
+        }
+        .layout {
+            display: grid;
+            gap: var(--gap);
+        }
+        @media (min-width: 60rem) {
+            .layout {
+                grid-template-columns: minmax(0, 1fr) 22rem;
+                align-items: start;
+            }
+            .settings {
+                position: sticky;
+                top: var(--gap);
+                max-height: calc(100dvh - 2 * var(--gap));
+                overflow-y: auto;
+            }
+        }
+
+        /* Stage */
+        .stage {
+            position: relative;
+            border-radius: 6px;
+            overflow: hidden;
+            background: #111;
+        }
+        image-panel {
+            aspect-ratio: 16 / 9;
+            height: auto;
+        }
+        image-panel:focus-visible {
+            outline: 3px solid Highlight;
+            outline-offset: -3px;
+        }
+
+        /* On-screen display, over the panel. Clicks pass through to it. */
+        .osd {
+            position: absolute;
+            inset: 0;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+            pointer-events: none;
+            color: #fff;
+            font-size: 0.875rem;
+            text-shadow: 0 1px 2px #000;
+            transition: opacity 0.2s, visibility 0.2s;
+        }
+        .osd[hidden] {
+            display: flex;
+            opacity: 0;
+            visibility: hidden;
+        }
+        .osd-top, .osd-bottom {
+            padding: 0.75rem 1rem;
+        }
+        .osd-top {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            background: linear-gradient(#000a, transparent);
+        }
+        .osd-bottom {
+            background: linear-gradient(transparent, #000c 2rem);
+            padding-top: 2.5rem;
+        }
+        .osd-file {
+            font-family: ui-monospace, monospace;
+            opacity: 0.8;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+        }
+        .osd-state {
+            margin-inline-start: auto;
+            white-space: nowrap;
+        }
+        .osd-counter {
+            font-variant-numeric: tabular-nums;
+            font-weight: 600;
+        }
+        .osd dl {
+            display: grid;
+            grid-template-columns: auto auto minmax(0, 1fr);
+            gap: 0.125rem 0.5rem;
+            margin: 0;
+        }
+        .osd dt, .osd dd {
+            margin: 0;
+        }
+        .osd dt {
+            font-weight: 600;
+        }
+        .osd dd {
+            overflow: hidden;
+            text-overflow: ellipsis;
+            display: -webkit-box;
+            -webkit-line-clamp: 2;
+            -webkit-box-orient: vertical;
+        }
+        .osd dd.empty {
+            opacity: 0.5;
+        }
+        /* Compact the overlay on small panels so it fits within them */
+        .stage {
+            container-type: inline-size;
+        }
+        @container (width < 36rem) {
+            .osd {
+                font-size: 0.75rem;
+            }
+            .osd-top, .osd-bottom {
+                padding: 0.5rem 0.75rem;
+            }
+            .osd-bottom {
+                padding-top: 1rem;
+            }
+            .osd dd {
+                -webkit-line-clamp: 1;
+            }
+            .progress {
+                margin-top: 0.5rem;
+            }
+        }
+        .source {
+            align-self: center;
+            justify-self: start;
+            padding: 0 0.375rem;
+            border-radius: 3px;
+            font-size: 0.6875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+            text-shadow: none;
+            background: #fff3;
+        }
+        .source[data-source="file"] {
+            background: #2a7d4f;
+        }
+        .source[data-source="config"] {
+            background: #2f5f9e;
+        }
+        .source[data-source="fallback"] {
+            background: #8a5a14;
+        }
+        .progress {
+            height: 3px;
+            margin-top: 0.75rem;
+            background: #fff3;
+        }
+        .progress > div {
+            height: 100%;
+            background: #fff;
+            transform-origin: left;
+            transform: scaleX(0);
+        }
+
+        /* Transport */
+        .transport {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+            align-items: center;
+            margin-block: 0.75rem;
+        }
+        .transport label {
+            margin-inline-start: auto;
+        }
+
+        /* Settings */
+        .settings {
+            display: grid;
+            gap: var(--gap);
+            align-content: start;
+        }
+        fieldset {
+            display: grid;
+            gap: 0.5rem;
+            margin: 0;
+            padding: 0.75rem;
+            border: 1px solid var(--border);
+            border-radius: 6px;
+        }
+        legend {
+            padding-inline: 0.25rem;
+            font-weight: 600;
+        }
+        .field {
+            display: grid;
+            grid-template-columns: 8rem minmax(0, 1fr) auto;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        .field > :nth-child(2):last-child {
+            grid-column: span 2;
+        }
+        .field output {
+            min-width: 4.5ch;
+            text-align: end;
+            font-variant-numeric: tabular-nums;
+            color: var(--muted);
+        }
+        .check {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+        }
+        input:not([type]), input[type="text"], input[type="number"], select, textarea {
+            min-width: 0;
+            font: inherit;
+        }
+        textarea {
+            font-family: ui-monospace, monospace;
+            font-size: 0.8125rem;
+            resize: vertical;
+        }
+        .hint {
+            margin: 0;
+            font-size: 0.8125rem;
+            color: var(--muted);
+        }
+        .buttons {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.5rem;
+        }
+
+        /* Output */
+        details {
+            margin-block-start: var(--gap);
+            border: 1px solid var(--border);
+            border-radius: 6px;
+            padding: 0.5rem 0.75rem;
+        }
+        summary {
+            cursor: pointer;
+            font-weight: 600;
+        }
+        pre {
+            margin: 0.5rem 0 0;
+            overflow: auto;
+            max-height: 24rem;
+            font-size: 0.8125rem;
+        }
+        .log {
+            margin: 0.5rem 0 0;
+            padding: 0;
+            list-style: none;
+            max-height: 16rem;
+            overflow-y: auto;
+            font-family: ui-monospace, monospace;
+            font-size: 0.8125rem;
+        }
+        .log li {
+            display: grid;
+            grid-template-columns: 9rem 6rem minmax(0, 1fr);
+            gap: 0.5rem;
+            border-top: 1px solid var(--border);
+            padding-block: 0.125rem;
+        }
+        .log .trigger {
+            color: var(--muted);
+        }
+        .visually-hidden {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            overflow: hidden;
+            clip-path: inset(50%);
+            white-space: nowrap;
+        }
+    </style>
+</head>
+<body>
+    <h1>&lt;image-panel&gt; playground</h1>
+    <p class="intro">
+        Change any setting and the panel updates straight away. The overlay shows the current slide's
+        fields and where each one came from. <a href="index.html">Back to the demo</a>.
+    </p>
+    <p class="intro" id="reduced-motion" hidden>
+        Your system asks for reduced motion, so transitions and slide motion are turned off.
+    </p>
+
+    <div class="layout">
+        <main>
+            <div class="stage">
+                <image-panel id="panel" aria-label="Travel photographs"></image-panel>
+                <div class="osd" id="osd">
+                    <div class="osd-top">
+                        <span class="osd-counter" id="osd-counter"></span>
+                        <span class="osd-file" id="osd-file"></span>
+                        <span class="osd-state" id="osd-state"></span>
+                    </div>
+                    <div class="osd-bottom">
+                        <dl id="osd-fields"></dl>
+                        <div class="progress"><div id="progress"></div></div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="transport">
+                <button type="button" id="prev" aria-controls="panel">Previous</button>
+                <button type="button" id="toggle" aria-controls="panel">Play</button>
+                <button type="button" id="next" aria-controls="panel">Next</button>
+                <label class="check"><input type="checkbox" id="show-osd" checked> Show overlay</label>
+            </div>
+            <p class="visually-hidden" role="status" id="announcer"></p>
+
+            <details open>
+                <summary>Event log</summary>
+                <ol class="log" id="log" aria-label="Events, newest first"></ol>
+            </details>
+
+            <details>
+                <summary>Generated code</summary>
+                <p class="hint">The markup and <code>slideshow.json</code> for the current settings, leaving out defaults.</p>
+                <div class="buttons"><button type="button" id="copy">Copy JSON</button></div>
+                <pre><code id="code"></code></pre>
+            </details>
+        </main>
+
+        <form class="settings" id="settings" autocomplete="off">
+            <fieldset id="panel-settings">
+                <legend>Panel</legend>
+                <div class="field">
+                    <label for="interval">Interval</label>
+                    <input type="range" id="interval" name="interval" min="1000" max="15000" step="500">
+                    <output for="interval" data-unit="s"></output>
+                </div>
+                <div class="field">
+                    <label for="transitionDuration">Transition</label>
+                    <input type="range" id="transitionDuration" name="transitionDuration" min="0" max="3000" step="100">
+                    <output for="transitionDuration" data-unit="s"></output>
+                </div>
+                <div class="field">
+                    <label for="fit">Fit</label>
+                    <select id="fit" name="fit">
+                        <option>cover</option>
+                        <option>contain</option>
+                        <option>fill</option>
+                        <option>none</option>
+                        <option>scale-down</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="positionX">Position X</label>
+                    <input type="range" id="positionX" name="positionX" min="0" max="100">
+                    <output for="positionX" data-unit="%"></output>
+                </div>
+                <div class="field">
+                    <label for="positionY">Position Y</label>
+                    <input type="range" id="positionY" name="positionY" min="0" max="100">
+                    <output for="positionY" data-unit="%"></output>
+                </div>
+                <div class="field">
+                    <label for="motion">Motion</label>
+                    <select id="motion" name="motion">
+                        <option value="none">None</option>
+                        <option value="random">Random</option>
+                        <option value="zoom-in">Zoom in</option>
+                        <option value="zoom-out">Zoom out</option>
+                        <option value="pan-left">Pan left</option>
+                        <option value="pan-right">Pan right</option>
+                    </select>
+                </div>
+                <label class="check"><input type="checkbox" name="loop"> Loop</label>
+                <label class="check"><input type="checkbox" name="shuffle"> Shuffle</label>
+                <label class="check"><input type="checkbox" name="metadata"> Read file metadata</label>
+                <label class="check"><input type="checkbox" name="keyboard"> Keyboard navigation</label>
+                <label class="check"><input type="checkbox" name="pauseOnHover"> Pause on hover</label>
+            </fieldset>
+
+            <fieldset id="load-settings">
+                <legend>On load</legend>
+                <label class="check"><input type="checkbox" name="autoplay"> Autoplay</label>
+                <div class="field">
+                    <label for="startIndex">Start index</label>
+                    <input type="number" id="startIndex" name="startIndex" min="0" step="1">
+                </div>
+                <div class="buttons"><button type="button" id="reload">Reload panel</button></div>
+                <p class="hint">These only apply when slides load.</p>
+            </fieldset>
+
+            <fieldset id="slide-settings">
+                <legend>Slide <span id="slide-number"></span></legend>
+                <p class="hint">Overrides for the slide on screen. Leave blank to use the panel's setting.</p>
+                <div class="field">
+                    <label for="slide-fit">Fit</label>
+                    <select id="slide-fit" name="fit">
+                        <option value="">Panel default</option>
+                        <option>cover</option>
+                        <option>contain</option>
+                        <option>fill</option>
+                        <option>none</option>
+                        <option>scale-down</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="slide-position">Position</label>
+                    <input type="text" id="slide-position" name="position" list="positions" placeholder="Panel default">
+                </div>
+                <div class="field">
+                    <label for="slide-flip">Flip</label>
+                    <select id="slide-flip" name="flip">
+                        <option value="">None</option>
+                        <option>horizontal</option>
+                        <option>vertical</option>
+                        <option>both</option>
+                    </select>
+                </div>
+                <div class="field">
+                    <label for="slide-transform">Transform</label>
+                    <input type="text" id="slide-transform" name="transform" placeholder="e.g. scale(1.2) rotate(-4deg)">
+                </div>
+                <div class="field">
+                    <label for="slide-clip">Clip</label>
+                    <input type="text" id="slide-clip" name="clip" placeholder="e.g. inset(5% round 12px)">
+                </div>
+                <div class="field">
+                    <label for="slide-motion">Motion</label>
+                    <select id="slide-motion" name="motion">
+                        <option value="">Panel default</option>
+                        <option value="none">None</option>
+                        <option value="random">Random</option>
+                        <option value="custom">Custom…</option>
+                    </select>
+                </div>
+                <div class="field" id="keyframes-field">
+                    <label for="slide-keyframes">Keyframes</label>
+                    <textarea id="slide-keyframes" name="keyframes" rows="3" placeholder="One transform per line"></textarea>
+                </div>
+                <div class="field" id="easing-field">
+                    <label for="slide-easing">Easing</label>
+                    <select id="slide-easing" name="easing">
+                        <option>linear</option>
+                        <option>ease</option>
+                        <option>ease-in</option>
+                        <option>ease-out</option>
+                        <option>ease-in-out</option>
+                    </select>
+                </div>
+                <div class="buttons"><button type="button" id="reset-slide">Reset slide</button></div>
+            </fieldset>
+
+            <datalist id="positions">
+                <option value="center"></option>
+                <option value="top"></option>
+                <option value="bottom"></option>
+                <option value="left"></option>
+                <option value="right"></option>
+                <option value="center 30%"></option>
+            </datalist>
+        </form>
+    </div>
+
+    <script type="module">
+        import '../dist/image-panel.esm.js';
+
+        const $ = id => document.getElementById(id);
+        const panel = $('panel');
+        const form = $('settings');
+        const slideFields = $('slide-settings');
+
+        const DEFAULTS = {
+            interval: 6000, transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
+            loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, autoplay: false, startIndex: 0,
+        };
+        const MOTIONS = {
+            'none': 'none',
+            'random': 'random',
+            'zoom-in': {from: 'scale(1)', to: 'scale(1.15)', easing: 'ease-out'},
+            'zoom-out': {from: 'scale(1.15)', to: 'scale(1)', easing: 'ease-out'},
+            'pan-left': ['scale(1.12) translate(4%, 0)', 'scale(1.12) translate(-4%, 0)'],
+            'pan-right': ['scale(1.12) translate(-4%, 0)', 'scale(1.12) translate(4%, 0)'],
+        };
+        const FLIPS = {horizontal: 'scaleX(-1)', vertical: 'scaleY(-1)', both: 'scale(-1, -1)'};
+        const FIELDS = ['title', 'description', 'creator', 'copyright', 'alt'];
+        const BASE_PATH = 'images/';
+
+        // The playground's own copy of the slideshow. Edits go here, and the panel is
+        // given a fresh config built from it whenever a change needs the slides reloaded.
+        const source = await (await fetch('slideshow.json')).json();
+        const slides = source.slides.map(slide => typeof slide === 'string' ? {src: slide} : {...slide});
+        const settings = {...DEFAULTS};
+        for (const key of Object.keys(DEFAULTS))
+        {
+            if (key in source) settings[key] = source[key];
+        }
+        settings.motion = Object.keys(MOTIONS).find(key => key === source.motion) ?? DEFAULTS.motion;
+        settings.keyboard = true;
+
+        // Indexes into `slides`, in the order the panel is showing them (differs when shuffled)
+        let order = slides.map((_, i) => i);
+        let editing = -1;   // index into `slides` that the slide editor is showing
+
+
+
+        // Settings → panel
+
+        const panelPosition = () => settings.positionX === 50 && settings.positionY === 50
+            ? 'center'
+            : `${settings.positionX}% ${settings.positionY}%`;
+
+        /** Settings the panel reads as it goes, so they're applied as attributes without reloading. */
+        function applyLive()
+        {
+            panel.interval = settings.interval;
+            panel.transitionDuration = settings.transitionDuration;
+            panel.fit = settings.fit;
+            panel.position = panelPosition();
+            panel.loop = settings.loop;
+            panel.keyboard = settings.keyboard;
+            panel.pauseOnHover = settings.pauseOnHover;
+            panel.motion = MOTIONS[settings.motion];
+        }
+
+        /**
+         * Gives the panel a new config. By default it carries on from the slide at `at` (an index into `order`),
+         * in the same order and play state, so the swap is seamless. `fresh` starts over as a page load would.
+         */
+        function reload({at = Math.max(panel.currentIndex, 0), fresh = false, reshuffle = false} = {})
+        {
+            const keepOrder = settings.shuffle && !fresh && !reshuffle;
+            panel.config = {
+                basePath: BASE_PATH,
+                metadata: settings.metadata,
+                shuffle: settings.shuffle && !keepOrder,
+                autoplay: fresh && settings.autoplay,
+                startIndex: fresh ? settings.startIndex : reshuffle ? 0 : Math.max(at, 0),
+                slides: (keepOrder ? order : slides.map((_, i) => i)).map(i => clean(slides[i])),
+            };
+            if (fresh && !settings.autoplay) panel.pause();
+        }
+
+        /** A slide without its empty fields. */
+        function clean(slide)
+        {
+            return Object.fromEntries(Object.entries(slide).filter(([, value]) => value !== '' && value !== undefined));
+        }
+
+        const resolve = src => new URL(src, new URL(BASE_PATH, location.href)).href;
+
+        /** Applies a slide's look straight to its image on screen, mirroring what the panel does, for instant feedback while typing. */
+        function preview(index)
+        {
+            const img = [...panel.shadowRoot.querySelectorAll('[part~="slide"]')].at(-1)?.querySelector('[part~="image"]');
+            if (!img || order[panel.currentIndex] !== index) return;
+
+            const slide = slides[index];
+            img.style.objectFit = slide.fit || settings.fit;
+            img.style.objectPosition = slide.position || panelPosition();
+            img.style.transform = [slide.transform, FLIPS[slide.flip]].filter(Boolean).join(' ');
+            img.style.clipPath = slide.clip || '';
+        }
+
+
+
+        // Form
+
+        function readForm()
+        {
+            for (const input of $('panel-settings').elements)
+            {
+                if (!input.name) continue;
+                settings[input.name] = input.type === 'checkbox' ? input.checked : input.type === 'range' ? input.valueAsNumber : input.value;
+            }
+            const start = form.elements.startIndex.valueAsNumber;
+            settings.startIndex = Number.isInteger(start) ? start : 0;
+            settings.autoplay = form.elements.autoplay.checked;
+        }
+
+        function writeForm()
+        {
+            for (const input of [...$('panel-settings').elements, ...$('load-settings').elements])
+            {
+                if (!(input.name in settings)) continue;
+                if (input.type === 'checkbox') input.checked = settings[input.name];
+                else input.value = settings[input.name];
+            }
+            form.elements.startIndex.max = slides.length - 1;
+            updateOutputs();
+        }
+
+        function updateOutputs()
+        {
+            for (const output of form.querySelectorAll('output'))
+            {
+                const input = $(output.htmlFor.value);
+                output.value = output.dataset.unit === 's' ? `${(input.valueAsNumber / 1000).toFixed(1)}s` : `${input.value}%`;
+            }
+        }
+
+        $('panel-settings').addEventListener('input', event => {
+            const {name} = event.target;
+            readForm();
+            updateOutputs();
+            applyLive();
+            if (name === 'fit' || name.startsWith('position')) preview(order[panel.currentIndex]);
+            renderCode();
+        });
+
+        // Settings that only take effect on load, or that you'd want to see straight away, reload the slides
+        $('panel-settings').addEventListener('change', ({target: {name}}) => {
+            if (name === 'shuffle') settings.shuffle ? reload({reshuffle: true}) : reload({at: order[panel.currentIndex]});
+            else if (name === 'metadata' || name === 'motion') reload();
+        });
+
+        $('load-settings').addEventListener('input', () => {
+            readForm();
+            renderCode();
+        });
+        $('reload').addEventListener('click', () => reload({fresh: true}));
+
+
+        // Slide editor
+
+        function motionChoice(motion)
+        {
+            if (motion === undefined || motion === null) return '';
+            if (motion === false || motion === 'none') return 'none';
+            if (motion === 'random') return 'random';
+            return 'custom';
+        }
+
+        function keyframesOf(motion)
+        {
+            if (Array.isArray(motion)) return motion;
+            if (motion && typeof motion === 'object') return motion.keyframes ?? [motion.from, motion.to];
+            return [];
+        }
+
+        function showSlide(index)
+        {
+            editing = index;
+            const slide = slides[index];
+            const {elements} = slideFields;
+            $('slide-number').textContent = `${order.indexOf(index) + 1}: ${slide.src}`;
+            for (const name of ['fit', 'position', 'flip', 'transform', 'clip'])
+            {
+                elements[name].value = slide[name] ?? '';
+            }
+            elements.motion.value = motionChoice(slide.motion);
+            elements.keyframes.value = keyframesOf(slide.motion).join('\n');
+            elements.easing.value = slide.motion?.easing ?? 'linear';
+            syncMotionFields();
+        }
+
+        function syncMotionFields()
+        {
+            const custom = slideFields.elements.motion.value === 'custom';
+            $('keyframes-field').hidden = !custom;
+            $('easing-field').hidden = !custom;
+        }
+
+        function readSlide()
+        {
+            const slide = slides[editing];
+            const {elements} = slideFields;
+            for (const name of ['fit', 'position', 'flip', 'transform', 'clip'])
+            {
+                slide[name] = elements[name].value.trim();
+            }
+            const choice = elements.motion.value;
+            if (choice === 'custom')
+            {
+                const keyframes = elements.keyframes.value.split('\n').map(line => line.trim()).filter(Boolean);
+                // Start with a sensible zoom so choosing "Custom" does something visible
+                if (keyframes.length < 2)
+                {
+                    keyframes.splice(0, Infinity, 'scale(1)', 'scale(1.15)');
+                    elements.keyframes.value = keyframes.join('\n');
+                }
+                const easing = elements.easing.value;
+                slide.motion = easing === 'linear' ? keyframes : {keyframes, easing};
+            }
+            else
+            {
+                slide.motion = choice === 'none' ? false : choice || undefined;
+            }
+            syncMotionFields();
+        }
+
+        slideFields.addEventListener('input', () => {
+            if (editing < 0) return;
+            readSlide();
+            preview(editing);
+            renderCode();
+        });
+        slideFields.addEventListener('change', () => editing >= 0 && reload({at: order.indexOf(editing)}));
+
+        $('reset-slide').addEventListener('click', () => {
+            if (editing < 0) return;
+            const original = source.slides[editing];
+            slides[editing] = typeof original === 'string' ? {src: original} : {...original};
+            showSlide(editing);
+            reload({at: order.indexOf(editing)});
+            renderCode();
+        });
+
+
+        // Generated code
+
+        function exportConfig()
+        {
+            const config = {basePath: BASE_PATH};
+            for (const key of ['autoplay', 'interval', 'transitionDuration', 'shuffle', 'loop', 'startIndex', 'fit', 'metadata'])
+            {
+                if (settings[key] !== DEFAULTS[key]) config[key] = settings[key];
+            }
+            if (panelPosition() !== 'center') config.position = panelPosition();
+            if (settings.motion !== 'none') config.motion = MOTIONS[settings.motion];
+            config.slides = slides.map(clean);
+            return config;
+        }
+
+        function renderCode()
+        {
+            const attributes = [
+                'src="slideshow.json"',
+                settings.keyboard && 'keyboard',
+                settings.pauseOnHover && 'pause-on-hover',
+                `aria-label="${panel.getAttribute('aria-label')}"`,
+            ].filter(Boolean).join(' ');
+            $('code').textContent = `<image-panel ${attributes}></image-panel>\n\n${JSON.stringify(exportConfig(), null, 4)}`;
+        }
+
+        $('copy').addEventListener('click', async ({target}) => {
+            try
+            {
+                await navigator.clipboard.writeText(JSON.stringify(exportConfig(), null, 4));
+                target.textContent = 'Copied';
+            }
+            catch
+            {
+                target.textContent = 'Copy failed';
+            }
+            setTimeout(() => target.textContent = 'Copy JSON', 1500);
+        });
+
+
+
+        // On-screen display
+
+        const osd = $('osd');
+        const progress = $('progress');
+        const holds = new Set();
+
+        $('show-osd').addEventListener('change', ({target}) => osd.hidden = !target.checked);
+
+        /** Where a field's value came from: the config, the image file, or the alt-from-title fallback. */
+        function sourceOf(field, slide, original)
+        {
+            if (original[field] !== undefined && original[field] !== '') return 'config';
+            if (field === 'alt' && original.alt === '') return 'config';
+            if (!slide[field]) return null;
+            if (field === 'alt' && slide.alt === slide.title) return 'fallback';
+            return 'file';
+        }
+
+        function renderOsd(index, slide)
+        {
+            const original = slides[order[index]] ?? {};
+            $('osd-counter').textContent = `${index + 1} / ${panel.length}`;
+            $('osd-file').textContent = original.src ?? '';
+
+            const rows = FIELDS.map(field => {
+                const dt = document.createElement('dt');
+                const tag = document.createElement('span');
+                const dd = document.createElement('dd');
+                const from = sourceOf(field, slide, original);
+
+                dt.textContent = field;
+                tag.className = 'source';
+                tag.dataset.source = from ?? 'none';
+                tag.textContent = {config: 'json', file: 'file', fallback: 'title'}[from] ?? '—';
+                tag.title = {config: 'Set in the config', file: 'Read from the image file', fallback: 'Fallen back to the title'}[from] ?? 'Not set';
+                dd.textContent = slide[field] || (field === 'alt' && from === 'config' ? '"" (decorative)' : 'none');
+                dd.classList.toggle('empty', !slide[field]);
+                return [dt, tag, dd];
+            });
+            $('osd-fields').replaceChildren(...rows.flat());
+        }
+
+        function renderState()
+        {
+            $('osd-state').textContent = !panel.playing ? '⏸ Paused' : holds.size ? `⏸ Held (${[...holds].join(', ')})` : '▶ Playing';
+            $('toggle').textContent = panel.playing ? 'Pause' : 'Play';
+        }
+
+        function resetProgress()
+        {
+            progress.getAnimations().forEach(anim => anim.cancel());
+        }
+
+        panel.addEventListener('countdown', ({detail: {remaining, interval}}) => {
+            resetProgress();
+            progress.animate(
+                [{transform: `scaleX(${1 - remaining / interval})`}, {transform: 'scaleX(1)'}],
+                {duration: remaining, fill: 'forwards'},
+            );
+        });
+        for (const type of ['pause', 'hold'])
+        {
+            panel.addEventListener(type, () => progress.getAnimations().forEach(anim => anim.pause()));
+        }
+        panel.addEventListener('navigate', resetProgress);
+        panel.addEventListener('ready', () => {
+            resetProgress();
+            order = panel.slides.map(slide => slides.findIndex(({src}) => resolve(src) === slide.src));
+        });
+
+        panel.addEventListener('slidechange', ({detail: {index, slide, trigger}}) => {
+            renderOsd(index, slide);
+            // Don't swap the editor's slide out from under someone who's using it
+            if (!slideFields.contains(document.activeElement)) showSlide(order[index]);
+            if (trigger !== 'auto' && trigger !== 'start')
+            {
+                $('announcer').textContent = `Slide ${index + 1} of ${panel.length}${slide.title ? `: ${slide.title}` : ''}`;
+            }
+        });
+        panel.addEventListener('hold', ({detail}) => (holds.add(detail.trigger), renderState()));
+        panel.addEventListener('resume', () => (holds.clear(), renderState()));
+        panel.addEventListener('play', renderState);
+        panel.addEventListener('pause', renderState);
+
+
+        // Transport
+
+        $('toggle').addEventListener('click', () => panel.playing ? panel.pause() : panel.play());
+        $('prev').addEventListener('click', () => panel.prev());
+        $('next').addEventListener('click', () => panel.next());
+
+
+        // Event log
+
+        const EVENTS = [
+            'configloadstart', 'ready', 'error', 'slideloadstart', 'slideload', 'slideerror', 'navigate', 'loop',
+            'slidechange', 'slidechangeend', 'play', 'pause', 'ended', 'hold', 'resume', 'countdown',
+        ];
+        const log = $('log');
+
+        function describe(detail)
+        {
+            const parts = [];
+            if ('index' in detail) parts.push(`index ${detail.index}`);
+            if ('previousIndex' in detail) parts.push(`from ${detail.previousIndex}`);
+            if (detail.preload) parts.push('preload');
+            if ('length' in detail) parts.push(`${detail.length} slides`);
+            if ('remaining' in detail) parts.push(`${Math.round(detail.remaining)} of ${detail.interval} ms`);
+            if (detail.error) parts.push(String(detail.error.message ?? detail.error));
+            return parts.join(', ');
+        }
+
+        for (const type of EVENTS)
+        {
+            panel.addEventListener(type, ({detail}) => {
+                const item = document.createElement('li');
+                item.innerHTML = '<span></span><span class="trigger"></span><span></span>';
+                const [name, trigger, info] = item.children;
+                name.textContent = type;
+                trigger.textContent = detail.trigger;
+                info.textContent = describe(detail);
+                log.prepend(item);
+                while (log.children.length > 50) log.lastElementChild.remove();
+            });
+        }
+
+
+
+        // Start
+
+        const reducedMotion = matchMedia('(prefers-reduced-motion: reduce)');
+        const syncReducedMotion = () => $('reduced-motion').hidden = !reducedMotion.matches;
+        reducedMotion.addEventListener('change', syncReducedMotion);
+        syncReducedMotion();
+
+        writeForm();
+        applyLive();
+        renderCode();
+        renderState();
+        reload({fresh: true});
+    </script>
+</body>
+</html>

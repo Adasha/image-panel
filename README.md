@@ -261,7 +261,7 @@ panel.addEventListener('slidechange', ({detail}) => caption.textContent = detail
 playButton.addEventListener('click', () => panel.playing ? panel.pause() : panel.play());
 ```
 
-See [demo/index.html](demo/index.html) for a fuller example.
+See [demo/index.html](demo/index.html) for a fuller example, and [demo/playground.html](demo/playground.html) to try every setting live, with an overlay showing each slide's metadata and an event log.
 
 ## Styling
 
@@ -301,6 +301,7 @@ The component renders into an open shadow root.
 ```sh
 npm install
 npm start          # build, watch and serve the demo at http://localhost:8000/demo/
+                   # and the playground at http://localhost:8000/demo/playground.html
 npm run build      # build dist/
 npx playwright install chromium firefox   # once
 npm test
