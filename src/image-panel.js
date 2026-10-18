@@ -4,6 +4,8 @@
  * @license MPL-2.0
  */
 
+import {readMetadata} from './metadata.js';
+
 const DEFAULT_INTERVAL = 6000;
 const DEFAULT_TRANSITION = 1000;
 
@@ -21,7 +23,7 @@ const KEYS = {
 };
 
 const UPGRADABLE = [
-    'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
+    'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
     'startIndex', 'fit', 'position', 'sizes', 'motion', 'keyboard', 'pauseOnHover',
 ];
 
@@ -103,6 +105,7 @@ export class ImagePanel extends HTMLElement
     #preload = null;
     #request = null;
     #motion;                // non-string `motion` set from JS
+    #described = new WeakMap(); // slide -> promise of its fields being filled in
 
     #playing = false;
     #holds = new Set(['offscreen']);
@@ -303,6 +306,13 @@ export class ImagePanel extends HTMLElement
         }
     }
 
+    /**
+     * Fill in each slide's missing `title`, `description`, `alt`, `creator` and `copyright` from its image file's
+     * metadata, when the slide first loads. Takes effect from the next config.
+     */
+    get metadata() { return this.hasAttribute('metadata') || !!this.#config.metadata; }
+    set metadata(value) { this.toggleAttribute('metadata', !!value); }
+
     /** Enable arrow key, Home and End navigation. Makes the panel focusable. */
     get keyboard() { return this.hasAttribute('keyboard'); }
     set keyboard(value) { this.toggleAttribute('keyboard', !!value); }
@@ -356,8 +366,8 @@ export class ImagePanel extends HTMLElement
             src: img.getAttribute('src'),
             srcset: img.getAttribute('srcset'),
             sizes: img.getAttribute('sizes'),
-            alt: img.alt,
-            title: img.title,
+            alt: img.getAttribute('alt'),
+            title: img.getAttribute('title'),
             ...img.dataset,
         })), document.baseURI);
     }
@@ -372,6 +382,11 @@ export class ImagePanel extends HTMLElement
             .map(slide => normaliseSlide(slide, base))
             .filter(Boolean);
 
+        // Without metadata to wait for, slides are complete straight away
+        if (!this.metadata)
+        {
+            this.#slides.forEach(slide => this.#describe(slide));
+        }
         if (this.shuffle)
         {
             shuffle(this.#slides);
@@ -414,7 +429,6 @@ export class ImagePanel extends HTMLElement
         img.setAttribute('part', 'image');
         img.decoding = 'async';
         img.fetchPriority = priority;
-        img.alt = slide.alt;
 
         if (slide.style)
         {
@@ -437,11 +451,15 @@ export class ImagePanel extends HTMLElement
         img.src = slide.src;
 
         const slides = this.#slides;
-        const ready = img.decode().then(
-            () => img,
-            // decode() can reject for reasons other than a broken image
-            () => img.complete && img.naturalWidth ? img : null,
-        ).then(img => {
+        const ready = Promise.all([
+            img.decode().then(
+                () => img,
+                // decode() can reject for reasons other than a broken image
+                () => img.complete && img.naturalWidth ? img : null,
+            ),
+            this.#describe(slide, priority),
+        ]).then(([img]) => {
+            if (img) img.alt = slide.alt;
             // Ignore images from a slide list that has since been replaced
             if (this.#slides !== slides) return img;
             if (img)
@@ -458,6 +476,32 @@ export class ImagePanel extends HTMLElement
         });
         this.#emit('slideloadstart', trigger, {index, slide, preload: priority === 'low'});
         return {index, ready};
+    }
+
+    /** Fills in the slide's missing fields, from its image's metadata if enabled. Once per slide. */
+    #describe(slide, priority)
+    {
+        let described = this.#described.get(slide);
+        if (!described)
+        {
+            if (this.metadata)
+            {
+                described = readMetadata(slide.src, {priority, lang: this.closest('[lang]')?.lang}).then(
+                    fields => completeSlide(slide, fields),
+                    error => {
+                        console.warn(`[image-panel] Failed to read metadata from "${slide.src}"`, error);
+                        completeSlide(slide);
+                    },
+                );
+            }
+            else
+            {
+                completeSlide(slide);
+                described = Promise.resolve();
+            }
+            this.#described.set(slide, described);
+        }
+        return described;
     }
 
     #renderedSizes()
@@ -802,8 +846,17 @@ function normaliseSlide(slide, base)
         ...slide,
         src: new URL(slide.src, base).href,
         srcset: slide.srcset ? resolveSrcset(slide.srcset, base) : '',
-        alt: slide.alt ?? slide.title ?? '',
     };
+}
+
+/** Adds fields from the image's metadata where the slide doesn't set its own, then falls back from alt to title. */
+function completeSlide(slide, metadata = {})
+{
+    for (const [field, value] of Object.entries(metadata))
+    {
+        slide[field] ??= value;
+    }
+    slide.alt ??= slide.title ?? '';
 }
 
 /**

@@ -5,6 +5,7 @@
 	"interval": 5000,
 	"transitionDuration": 1000,
 	"motion": "random",
+	"metadata": true,
 	"slides": [
 		{
 			"src": "HaLongBay-Woman-in-shop-boat.jpg",
@@ -14,9 +15,7 @@
 		},
 		{
 			"src": "KhaiDinh-Silhouette-Edit.jpg",
-			"title": "Khải Định",
 			"alt": "Silhouette of the statue of Emperor Khải Định against a window of bright blue sky.",
-			"description": "Khải Định, the 12th and last Emperor of the Nguyễn Dynasty in Vietnam, looks out from his temple at the realm that was once his.",
 			"position": "center 30%",
 			"motion": {"from": "scale(1.15) translate(0, 3%)", "to": "scale(1)", "easing": "ease-out"}
 		},

@@ -4,7 +4,7 @@ A small, dependency-free image viewer web component. It shows one image at a tim
 
 It's not trying to be a gallery. It's the viewport part of one, so it fits into slideshows, hero banners, lightboxes, kiosks and other media apps.
 
-- About 10 KB minified, around 4 KB gzipped.
+- About 16 KB minified, around 6.5 KB gzipped.
 - Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
 - Careful with resources:
   - Nothing loads until the panel is near the viewport.
@@ -12,6 +12,7 @@ It's not trying to be a gallery. It's the viewport part of one, so it fits into 
   - The next image is preloaded and decoded before it's shown.
   - `srcset` is supported, and `sizes` defaults to the panel's rendered width.
 - Each slide can be fitted, positioned, flipped, transformed and clipped.
+- Titles, captions, alt text and credits can be read from the image files' own [metadata](#metadata).
 
 ## Usage
 
@@ -100,6 +101,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `fit` | `fit` | `cover` | Default `object-fit` for slides. |
 | `position` | `position` | `center` | Default `object-position` for slides. |
 | `sizes` | `sizes` | panel width | Default `sizes` for slides with a `srcset`. |
+| `metadata` | `metadata` | off | Fill in missing slide fields from each image's [metadata](#metadata). |
 | `motion` | `motion` | none | Default [motion](#motion) for slides without their own: `"random"`, `"none"`, or a motion spec (config and JS only). |
 | | `keyboard` | off | Arrow keys, Home and End navigate. Makes the panel focusable. |
 | | `pause-on-hover` | off | Hold auto-advance while the pointer is over the panel. |
@@ -115,6 +117,7 @@ A slide can be a plain URL string, or an object with these fields. Child images 
 | `srcset`, `sizes` | | Responsive image candidates, as on `<img>`. |
 | `alt` | | Alt text. Falls back to `title`. Use `""` for purely decorative images. |
 | `title`, `description` | | Not displayed. Passed back in events for your own captions. |
+| `creator`, `copyright` | | Not displayed. Passed back in events for your own credits. |
 | `fit` | `cover` | `object-fit`: `cover`, `contain`, `fill`, `none` or `scale-down`. |
 | `position` | `center` | `object-position`, e.g. `"left 20%"`. Moves the image within the panel. |
 | `flip` | | `horizontal`, `vertical` or `both`. |
@@ -163,6 +166,32 @@ Changing it affects the next slide shown, not the current one. Set `panel.motion
 - Motion only runs while the panel is playing: it freezes with `pause()` and whenever auto-advance is held (focus, hover, hidden or offscreen), and it holds on its last frame if the slide outlives it. Without `autoplay`, slides stay still.
 - It's turned off entirely when the user prefers reduced motion.
 
+### Metadata
+
+With `metadata` on, the panel reads each image's embedded metadata as the slide first loads, and uses it to fill in the fields the slide doesn't set itself. Anything you set in the JSON, config or `data-*` attributes wins, including `alt=""`.
+
+```html
+<image-panel src="slideshow.json" metadata></image-panel>
+```
+
+| Field | Read from, in order |
+| --- | --- |
+| `title` | XMP `dc:title`, IPTC Object Name, XMP `photoshop:Headline`, IPTC Headline |
+| `description` | XMP `dc:description`, IPTC Caption/Abstract, EXIF ImageDescription |
+| `alt` | XMP `Iptc4xmpCore:AltTextAccessibility` (the IPTC alt text field), then falls back to `title` as usual |
+| `creator` | XMP `dc:creator`, IPTC By-line, EXIF Artist |
+| `copyright` | XMP `dc:rights`, IPTC Copyright Notice, EXIF Copyright |
+
+These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
+
+- JPEG and PNG files are supported.
+- Where a field has several languages, the one matching the panel's `lang` is used, falling back to the default.
+- Camera placeholders such as "OLYMPUS DIGITAL CAMERA" are ignored.
+- Only the file's header is downloaded, up to where the image data starts. This is usually a few tens of KB, in parallel with the image itself. It's a separate request, though, so it's off by default.
+- Images on another origin need CORS headers (`Access-Control-Allow-Origin`) for their metadata to be read. Without them, the slide still shows, just without the extra fields, and a warning is logged.
+- Metadata is read from `src`, not from `srcset` candidates, since resized copies often have their metadata stripped.
+- Fields are filled in by the time `slideload` and `slidechange` fire for that slide. Slides that haven't loaded yet don't have them, and before the first load their `alt` isn't set yet either.
+
 ## JavaScript API
 
 | | |
@@ -176,7 +205,7 @@ Changing it affects the next slide shown, not the current one. Set `panel.motion
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `keyboard`, `pauseOnHover`.
+Each attribute also has a matching property: `src`, `interval`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
 
 ### Events
 

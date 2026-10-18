@@ -59,6 +59,7 @@
     <h2>JSON config with external controls</h2>
     <p>
         Loaded from <code>slideshow.json</code>. Autoplays, and pauses on hover and on focus.
+        Captions missing from the JSON are read from the image files' metadata.
         Click the panel or tab to it, then use the arrow keys, Home and End.
     </p>
 
@@ -73,6 +74,7 @@
         <figcaption>
             <strong id="title"></strong>
             <p id="description"></p>
+            <p id="credit"></p>
         </figcaption>
     </figure>
 
@@ -103,6 +105,7 @@
             document.getElementById('counter').value = `${detail.index + 1} / ${panel.length}`;
             document.getElementById('title').textContent = detail.slide.title ?? '';
             document.getElementById('description').textContent = detail.slide.description ?? '';
+            document.getElementById('credit').textContent = detail.slide.creator ? `Photo: ${detail.slide.creator}` : '';
         });
         panel.addEventListener('error', ({detail}) => console.error(detail.error));
     </script>

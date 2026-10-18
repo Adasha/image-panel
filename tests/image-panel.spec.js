@@ -1,4 +1,6 @@
 import {test, expect} from '@playwright/test';
+import {readFileSync} from 'node:fs';
+import {crc32, deflateSync} from 'node:zlib';
 
 const IMAGES = ['Markermeer.jpg', 'BigPit-ChainMacro.jpg', 'holocaust_memorial.jpg'].map(name => `/demo/images/${name}`);
 
@@ -482,6 +484,235 @@ test.describe('errors', () => {
 });
 
 
+test.describe('metadata', () => {
+    // Markermeer.jpg with its own metadata removed, so each test can add its own
+    const PLAIN_JPEG = (() => {
+        const file = readFileSync(new URL('../demo/images/Markermeer.jpg', import.meta.url));
+        const kept = [file.subarray(0, 2)];
+        let i = 2;
+        while (file[i + 1] !== 0xDA)
+        {
+            const end = i + 2 + file.readUInt16BE(i + 2);
+            if (file[i + 1] !== 0xE1 && file[i + 1] !== 0xED) kept.push(file.subarray(i, end));
+            i = end;
+        }
+        return Buffer.concat([...kept, file.subarray(i)]);
+    })();
+
+    const segment = (marker, ...parts) => {
+        const payload = Buffer.concat(parts);
+        const header = Buffer.from([0xFF, marker, 0, 0]);
+        header.writeUInt16BE(payload.length + 2, 2);
+        return Buffer.concat([header, payload]);
+    };
+    const jpeg = (...segments) => Buffer.concat([PLAIN_JPEG.subarray(0, 2), ...segments, PLAIN_JPEG.subarray(2)]);
+
+    const xmpPacket = (properties, attributes = '') => `<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+        <x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description rdf:about="" xmlns:dc="http://purl.org/dc/elements/1.1/"
+                xmlns:photoshop="http://ns.adobe.com/photoshop/1.0/"
+                xmlns:Iptc4xmpCore="http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/" ${attributes}>${properties}</rdf:Description>
+        </rdf:RDF></x:xmpmeta><?xpacket end="w"?>`;
+    const xmp = (...args) => segment(0xE1, Buffer.from('http://ns.adobe.com/xap/1.0/\0'), Buffer.from(xmpPacket(...args)));
+
+    /** A TIFF block of ASCII tags, as found in a JPEG's APP1 or a PNG's eXIf. */
+    const tiff = tags => {
+        const entries = Object.entries(tags);
+        const ifd = Buffer.alloc(8 + 2 + entries.length * 12 + 4);
+        const values = [];
+        let offset = ifd.length;
+        ifd.write('II');
+        ifd.writeUInt16LE(42, 2);
+        ifd.writeUInt32LE(8, 4);
+        ifd.writeUInt16LE(entries.length, 8);
+        entries.forEach(([tag, text], i) => {
+            const value = Buffer.from(`${text}\0`);
+            const entry = 10 + i * 12;
+            ifd.writeUInt16LE(Number(tag), entry);
+            ifd.writeUInt16LE(2, entry + 2);
+            ifd.writeUInt32LE(value.length, entry + 4);
+            // Values of up to four bytes are stored in the entry itself
+            if (value.length <= 4)
+            {
+                value.copy(ifd, entry + 8);
+                return;
+            }
+            ifd.writeUInt32LE(offset, entry + 8);
+            values.push(value);
+            offset += value.length;
+        });
+        return Buffer.concat([ifd, ...values]);
+    };
+    const exif = tags => segment(0xE1, Buffer.from('Exif\0\0'), tiff(tags));
+
+    /** IPTC record 2 datasets, as [dataset, text, encoding]. */
+    const iptc = (...datasets) => {
+        const iim = Buffer.concat(datasets.flatMap(([dataset, text, encoding = 'utf8']) => {
+            const value = Buffer.from(text, encoding);
+            return [Buffer.from([0x1C, 2, dataset, value.length >> 8, value.length & 0xFF]), value];
+        }));
+        const resource = Buffer.alloc(12);
+        resource.write('8BIM');
+        resource.writeUInt16BE(0x0404, 4);
+        resource.writeUInt32BE(iim.length, 8);
+        return segment(0xED, Buffer.from('Photoshop 3.0\0'), resource, iim, Buffer.alloc(iim.length % 2));
+    };
+
+    /** A 1×1 PNG with the given ancillary chunks before its image data. */
+    const png = (...chunks) => {
+        const chunk = (type, data) => {
+            const head = Buffer.alloc(8);
+            head.writeUInt32BE(data.length);
+            head.write(type, 4);
+            const crc = Buffer.alloc(4);
+            crc.writeUInt32BE(crc32(Buffer.concat([head.subarray(4), data])));
+            return Buffer.concat([head, data, crc]);
+        };
+        const header = Buffer.from([0, 0, 0, 1, 0, 0, 0, 1, 8, 0, 0, 0, 0]);
+        return Buffer.concat([
+            Buffer.from([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A]),
+            chunk('IHDR', header),
+            ...chunks.map(([type, data]) => chunk(type, data)),
+            chunk('IDAT', deflateSync(Buffer.from([0, 0]))),
+            chunk('IEND', Buffer.alloc(0)),
+        ]);
+    };
+
+    async function serve(page, files)
+    {
+        const requests = [];
+        await page.route('**/meta/*', route => {
+            const name = new URL(route.request().url()).pathname.split('/').pop();
+            requests.push(route.request().resourceType());
+            return route.fulfill({body: files[name], contentType: name.endsWith('.png') ? 'image/png' : 'image/jpeg'});
+        });
+        return requests;
+    }
+
+    const loaded = (panel, index = 0) => panel.evaluate((el, i) => new Promise(resolve => {
+        el.addEventListener('slideload', function listener({detail})
+        {
+            if (detail.index !== i) return;
+            el.removeEventListener('slideload', listener);
+            resolve(JSON.parse(JSON.stringify(detail.slide)));
+        });
+    }), index);
+
+    test('reads XMP fields, choosing the language alternative that matches the page', async ({page}) => {
+        await serve(page, {'lake.jpg': jpeg(xmp(`
+            <dc:title><rdf:Alt><rdf:li xml:lang="x-default">Lake</rdf:li><rdf:li xml:lang="de">See</rdf:li></rdf:Alt></dc:title>
+            <dc:description><rdf:Alt><rdf:li xml:lang="x-default">A lone sail on a grey lake.</rdf:li></rdf:Alt></dc:description>
+            <dc:creator><rdf:Seq><rdf:li>Ada</rdf:li><rdf:li>Grace</rdf:li></rdf:Seq></dc:creator>
+            <dc:rights><rdf:Alt><rdf:li xml:lang="x-default">© Ada Shailer</rdf:li></rdf:Alt></dc:rights>
+            <Iptc4xmpCore:AltTextAccessibility><rdf:Alt><rdf:li xml:lang="x-default">A white sail beneath storm clouds.</rdf:li></rdf:Alt></Iptc4xmpCore:AltTextAccessibility>`))});
+
+        const panel = await mount(page, '<div lang="de-CH"><image-panel metadata transition-duration="0"></image-panel></div>');
+        const slide = loaded(panel);
+        await setConfig(panel, ['/meta/lake.jpg']);
+
+        expect(await slide).toMatchObject({
+            title: 'See',
+            description: 'A lone sail on a grey lake.',
+            alt: 'A white sail beneath storm clouds.',
+            creator: 'Ada, Grace',
+            copyright: '© Ada Shailer',
+        });
+        await expect(panel.locator('img')).toHaveAttribute('alt', 'A white sail beneath storm clouds.');
+    });
+
+    test('fields set on the slide win over the file', async ({page}) => {
+        await serve(page, {'lake.jpg': jpeg(xmp(`
+            <dc:title><rdf:Alt><rdf:li xml:lang="x-default">File title</rdf:li></rdf:Alt></dc:title>
+            <dc:description><rdf:Alt><rdf:li xml:lang="x-default">File description</rdf:li></rdf:Alt></dc:description>
+            <Iptc4xmpCore:AltTextAccessibility><rdf:Alt><rdf:li xml:lang="x-default">File alt</rdf:li></rdf:Alt></Iptc4xmpCore:AltTextAccessibility>`))});
+
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        const slide = loaded(panel);
+        await setConfig(panel, {metadata: true, slides: [{src: '/meta/lake.jpg', title: 'My title', alt: ''}]});
+
+        // An empty alt still means decorative
+        expect(await slide).toMatchObject({title: 'My title', description: 'File description', alt: ''});
+        await expect(panel.locator('img')).toHaveAttribute('alt', '');
+    });
+
+    test('falls back from XMP to IPTC to EXIF, and skips camera placeholders', async ({page}) => {
+        await serve(page, {
+            'iptc.jpg': jpeg(
+                exif({0x010E: 'OLYMPUS DIGITAL CAMERA', 0x013B: 'Exif artist', 0x8298: 'Photographer\0Editor'}),
+                iptc([5, 'Café'], [120, 'Résumé', 'latin1'], [80, 'Ada'], [80, 'Grace']),
+                // Simple XMP properties are often written as attributes
+                xmp('', 'photoshop:Headline="Headline"'),
+            ),
+            'exif.jpg': jpeg(
+                exif({0x010E: 'Exif description', 0x8298: 'Photographer\0Editor'}),
+                xmp('', 'photoshop:Headline="Headline"'),
+            ),
+        });
+
+        const panel = await mount(page, '<image-panel metadata transition-duration="0"></image-panel>');
+        const first = loaded(panel, 0);
+        const second = loaded(panel, 1);
+        await setConfig(panel, ['/meta/iptc.jpg', '/meta/exif.jpg']);
+
+        expect(await first).toMatchObject({title: 'Café', description: 'Résumé', creator: 'Ada, Grace', copyright: 'Photographer, Editor'});
+        expect(await second).toMatchObject({title: 'Headline', description: 'Exif description', copyright: 'Photographer, Editor', alt: 'Headline'});
+    });
+
+    test('reads XMP and EXIF from PNGs', async ({page}) => {
+        const itxt = Buffer.concat([Buffer.from('XML:com.adobe.xmp\0\0\0\0\0'), Buffer.from(xmpPacket(
+            '<dc:title><rdf:Alt><rdf:li xml:lang="x-default">Pixel</rdf:li></rdf:Alt></dc:title>'))]);
+        await serve(page, {'pixel.png': png(['iTXt', itxt], ['eXIf', tiff({0x013B: 'Ada'})])});
+
+        const panel = await mount(page, '<image-panel metadata transition-duration="0"></image-panel>');
+        const slide = loaded(panel);
+        await setConfig(panel, ['/meta/pixel.png']);
+        expect(await slide).toMatchObject({title: 'Pixel', alt: 'Pixel', creator: 'Ada'});
+    });
+
+    test('fills in child images without their own alt', async ({page}) => {
+        await serve(page, {'lake.jpg': jpeg(iptc([5, 'Lake']))});
+        const panel = await mount(page, `
+            <image-panel metadata transition-duration="0">
+                <img src="/meta/lake.jpg">
+                <img src="/meta/lake.jpg?decorative" alt="">
+            </image-panel>`, {define: false});
+        const first = loaded(panel, 0);
+        const second = loaded(panel, 1);
+        await page.addScriptTag({type: 'module', url: '/src/image-panel.js'});
+
+        expect(await first).toMatchObject({title: 'Lake', alt: 'Lake'});
+        expect(await second).toMatchObject({title: 'Lake', alt: ''});
+    });
+
+    test('is off by default', async ({page}) => {
+        const requests = await serve(page, {'lake.jpg': jpeg(iptc([5, 'Lake']))});
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        const slide = loaded(panel);
+        await setConfig(panel, ['/meta/lake.jpg']);
+
+        expect((await slide).title).toBeUndefined();
+        expect(requests).toEqual(['image']);
+    });
+
+    test('still shows the slide when the metadata cannot be read', async ({page}) => {
+        // As for a cross-origin image without CORS: the <img> loads, but fetch fails
+        await page.route('**/meta/*', route => route.request().resourceType() === 'image'
+            ? route.fulfill({body: jpeg(iptc([5, 'Lake'])), contentType: 'image/jpeg'})
+            : route.fulfill({status: 404}));
+        const warnings = [];
+        page.on('console', message => message.type() === 'warning' && warnings.push(message.text()));
+
+        const panel = await mount(page, '<image-panel metadata transition-duration="0"></image-panel>');
+        const slide = loaded(panel);
+        await setConfig(panel, ['/meta/lake.jpg']);
+
+        expect(await slide).toMatchObject({alt: ''});
+        await expect(panel.locator('img')).toHaveCount(1);
+        expect(warnings).toEqual([expect.stringContaining('Failed to read metadata')]);
+    });
+});
+
+
 test.describe('accessibility', () => {
     test('exposes a labelled carousel group with image alt text', async ({page, browserName}) => {
         // Playwright's role queries don't see ElementInternals, so read the browser's own accessibility tree
@@ -548,5 +779,8 @@ test('demo page runs from the built dist file', async ({page}) => {
     await expect(page.locator('#title')).toHaveText('Boat stall in Hạ Long Bay');
     await page.locator('#next').click();
     await expect(page.locator('#counter')).toHaveText('2 / 5');
+    // Read from the image's metadata
+    await expect(page.locator('#title')).toHaveText('Khải Định');
+    await expect(page.locator('#credit')).toHaveText('Photo: Adam Shailer');
     expect(errors).toEqual([]);
 });
