@@ -1,21 +1,34 @@
 {
   "name": "image-panel",
-  "version": "0.3.5a",
+  "version": "0.4.0",
+  "description": "A small, configurable image viewer web component.",
+  "keywords": [
+    "web-component",
+    "custom-element",
+    "slideshow",
+    "image-viewer"
+  ],
   "author": "Adam Shailer",
-  "description": "Minimalist image viewer web component.",
   "license": "MPL-2.0",
-  "devDependencies": {
-    "@babel/cli": "^7.16.0",
-    "@babel/core": "^7.16.5",
-    "@babel/preset-env": "^7.16.5",
-    "gulp": "^4.0.2",
-    "gulp-babel": "^8.0.0",
-    "gulp-rename": "^2.0.0",
-    "gulp-sass": "^5.1.0",
-    "gulp-uglify": "^3.0.2"
+  "repository": "github:Adasha/image-panel",
+  "type": "module",
+  "exports": {
+    ".": "./dist/image-panel.esm.js",
+    "./classic": "./dist/image-panel.js"
   },
+  "module": "./dist/image-panel.esm.js",
+  "files": [
+    "dist",
+    "src"
+  ],
+  "sideEffects": true,
   "scripts": {
-    "build": "gulp build",
-    "test": "echo \"Error: no test specified\" && exit 1"
+    "build": "node scripts/build.js",
+    "start": "node scripts/build.js --serve",
+    "test": "playwright test"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.64.1",
+    "esbuild": "0.28.2"
   }
 }
