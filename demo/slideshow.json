@@ -1,0 +1,40 @@
+{
+	"basePath": "images/",
+	"autoplay": true,
+	"shuffle": false,
+	"interval": 5000,
+	"transitionDuration": 1000,
+	"slides": [
+		{
+			"src": "HaLongBay-Woman-in-shop-boat.jpg",
+			"title": "Boat stall in Hạ Long Bay",
+			"alt": "A woman in a small wooden boat piled with goods for sale floats beside a tourist junk in Hạ Long Bay.",
+			"description": "In lieu of shopping malls, wherever you go in Vietnam somebody will set up a stall with a spread of goods for sale to tourists. The absence of dry land is no obstacle, as this woman who floated up to our junk boat in Hạ Long Bay demonstrated."
+		},
+		{
+			"src": "KhaiDinh-Silhouette-Edit.jpg",
+			"title": "Khải Định",
+			"alt": "Silhouette of the statue of Emperor Khải Định against a window of bright blue sky.",
+			"description": "Khải Định, the 12th and last Emperor of the Nguyễn Dynasty in Vietnam, looks out from his temple at the realm that was once his.",
+			"position": "center 30%"
+		},
+		{
+			"src": "Markermeer.jpg",
+			"title": "Markermeer",
+			"alt": "A lone white sail on the horizon of a flat, grey lake beneath heavy storm clouds.",
+			"flip": "horizontal"
+		},
+		{
+			"src": "BigPit-ChainMacro.jpg",
+			"title": "Chains, Big Pit",
+			"alt": "Close-up of heavy, rust-covered chain links hanging side by side.",
+			"transform": "scale(1.2) rotate(-4deg)"
+		},
+		{
+			"src": "holocaust_memorial.jpg",
+			"title": "Memorial to the Murdered Jews of Europe",
+			"alt": "Looking straight up between four concrete stelae, the sky forms a cross between them.",
+			"clip": "inset(4% round 12px)"
+		}
+	]
+}

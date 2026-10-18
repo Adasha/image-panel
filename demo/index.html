@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>image-panel demo</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            font-family: system-ui, sans-serif;
+            line-height: 1.5;
+        }
+        body {
+            max-width: 60rem;
+            margin: 0 auto;
+            padding: 1rem;
+        }
+        image-panel {
+            aspect-ratio: 16 / 9;
+            height: auto;
+            background: #111;
+            border-radius: 6px;
+        }
+        image-panel:focus-visible {
+            outline: 3px solid Highlight;
+            outline-offset: 3px;
+        }
+        /* Before the element is defined, show only the first child image */
+        image-panel:not(:defined) > img {
+            width: 100%;
+            height: 100%;
+            object-fit: cover;
+        }
+        image-panel:not(:defined) > img:not(:first-child) {
+            display: none;
+        }
+        .controls {
+            display: flex;
+            gap: 0.5rem;
+            align-items: center;
+            margin-block: 0.75rem;
+        }
+        .controls output {
+            margin-inline-start: auto;
+            font-variant-numeric: tabular-nums;
+        }
+        figure {
+            margin: 0;
+        }
+        figcaption p {
+            margin: 0.25rem 0 0;
+            color: GrayText;
+        }
+    </style>
+</head>
+<body>
+    <h1>&lt;image-panel&gt;</h1>
+
+    <h2>JSON config with external controls</h2>
+    <p>
+        Loaded from <code>slideshow.json</code>. Autoplays, and pauses on hover and on focus.
+        Click the panel or tab to it, then use the arrow keys, Home and End.
+    </p>
+
+    <figure>
+        <image-panel id="main" src="slideshow.json" keyboard pause-on-hover aria-label="Travel photographs"></image-panel>
+        <div class="controls">
+            <button type="button" id="toggle" aria-controls="main">Play</button>
+            <button type="button" id="prev" aria-controls="main">Previous</button>
+            <button type="button" id="next" aria-controls="main">Next</button>
+            <output id="counter" for="main"></output>
+        </div>
+        <figcaption>
+            <strong id="title"></strong>
+            <p id="description"></p>
+        </figcaption>
+    </figure>
+
+    <h2>Child images, no JavaScript config</h2>
+    <p>
+        Slides read from <code>&lt;img&gt;</code> children, with options as <code>data-*</code> attributes.
+        Not autoplaying; use the arrow keys.
+    </p>
+
+    <image-panel keyboard transition-duration="400" aria-label="Photographs from child images">
+        <img src="images/Markermeer.jpg" alt="A lone white sail on the horizon of a flat, grey lake beneath heavy storm clouds.">
+        <img src="images/BigPit-ChainMacro.jpg" alt="Close-up of heavy, rust-covered chain links." data-flip="vertical" loading="lazy">
+        <img src="images/KhaiDinh-Silhouette-Edit.jpg" alt="Silhouette of a statue against a window of blue sky." data-fit="contain" loading="lazy">
+    </image-panel>
+
+    <script src="../dist/image-panel.js"></script>
+    <script>
+        const panel = document.getElementById('main');
+        const toggle = document.getElementById('toggle');
+
+        toggle.addEventListener('click', () => panel.playing ? panel.pause() : panel.play());
+        document.getElementById('prev').addEventListener('click', () => panel.prev());
+        document.getElementById('next').addEventListener('click', () => panel.next());
+
+        panel.addEventListener('play', () => toggle.textContent = 'Pause');
+        panel.addEventListener('pause', () => toggle.textContent = 'Play');
+        panel.addEventListener('slidechange', ({detail}) => {
+            document.getElementById('counter').value = `${detail.index + 1} / ${panel.length}`;
+            document.getElementById('title').textContent = detail.slide.title ?? '';
+            document.getElementById('description').textContent = detail.slide.description ?? '';
+        });
+        panel.addEventListener('error', ({detail}) => console.error(detail.error));
+    </script>
+</body>
+</html>
