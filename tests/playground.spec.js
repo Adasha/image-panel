@@ -79,12 +79,30 @@ test('transition controls set the panel transition and show only the options tha
     await expect(page.getByLabel('Dip colour')).toBeHidden();
 
     await page.locator('#transition').selectOption('push');
+    await page.getByLabel('Direction').selectOption('cardinal');
+    await expect(panel).toHaveAttribute('transition', 'push cardinal');
+    await expect(page.locator('#code')).toContainText('"transition": "push cardinal"');
+
+    // Diagonals are only offered for wipe and slide, and switching to push drops one
+    await expect(page.locator('#direction option[value="up-left"]')).toBeDisabled();
+    await page.locator('#transition').selectOption('slide');
     await page.getByLabel('Direction').selectOption('diagonal');
-    await expect(panel).toHaveAttribute('transition', 'push diagonal');
-    await expect(page.locator('#code')).toContainText('"transition": "push diagonal"');
+    await page.locator('#transition').selectOption('push');
+    await expect(panel).toHaveAttribute('transition', 'push');
+    await page.locator('#transition').selectOption('slide');
+    await page.getByLabel('Direction').selectOption('diagonal');
+
+    await expect(page.getByLabel('Feather')).toBeHidden();
+    await page.locator('#transition').selectOption('wipe');
+    await page.getByLabel('Feather').fill('20');
+    await page.locator('#transitionEasing').selectOption('ease-out');
+    await expect(panel).toHaveAttribute('transition-easing', 'ease-out');
+    await expect(page.locator('#code')).toContainText('"transitionEasing": "ease-out"');
+    await expect(panel).toHaveAttribute('transition', 'wipe diagonal 20%');
 
     await page.locator('#transition').selectOption('dip');
     await expect(page.getByLabel('Direction')).toBeHidden();
+    await expect(page.locator('#transitionEasing')).toBeHidden();
     await page.getByLabel('Dip colour').fill('#ffffff');
     await expect(panel).toHaveAttribute('transition', 'dip #ffffff');
 });

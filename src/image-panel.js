@@ -26,7 +26,15 @@ const DIRECTION_SETS = {
     cardinal: CARDINALS,
     diagonal: DIAGONALS,
 };
-const MOVE_EASING = 'ease-in-out';
+const DEFAULT_EASING = 'ease-in-out';
+const WIPE = '--image-panel-wipe';
+
+// Lets a wipe's mask edge be animated. Registration is document-wide, so another copy may have done it already.
+try
+{
+    CSS.registerProperty({name: WIPE, syntax: '<length-percentage>', inherits: false, initialValue: '0%'});
+}
+catch {}
 
 const KEYS = {
     ArrowLeft: (panel, rtl) => ({step: rtl ? 1 : -1}),
@@ -37,7 +45,7 @@ const KEYS = {
 
 const UPGRADABLE = [
     'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
-    'startIndex', 'fit', 'position', 'sizes', 'motion', 'transition', 'keyboard', 'pauseOnHover',
+    'startIndex', 'fit', 'position', 'sizes', 'motion', 'transition', 'transitionEasing', 'keyboard', 'pauseOnHover',
 ];
 
 const template = document.createElement('template');
@@ -59,6 +67,10 @@ template.innerHTML = `
     }
     .slides {
         isolation: isolate;
+    }
+    .slide {
+        /* Keep rotated or offset images inside the slide, so moving slides have straight edges */
+        overflow: clip;
     }
     .slide.blend {
         /* Opacities add rather than layer, so a cross-fade stays solid where slides overlap */
@@ -340,10 +352,18 @@ export class ImagePanel extends HTMLElement
 
     /**
      * Default transition for slides without their own: `'fade'`, `'none'`, `'dip [colour]'`, or
-     * `'wipe'`, `'slide'` or `'push'` with an optional direction. Takes effect from the next slide.
+     * `'wipe'`, `'slide'` or `'push'` with an optional direction (cardinal only for push) (and for wipes, a feather width, e.g. `'wipe up 10%'`).
+     * Takes effect from the next slide.
      */
     get transition() { return this.getAttribute('transition') ?? this.#config.transition ?? 'fade'; }
     set transition(value) { this.setAttribute('transition', value); }
+
+    /**
+     * Easing for transitions that move (wipe, slide and push): any CSS easing function. Fade and dip keep their own.
+     * Takes effect from the next slide.
+     */
+    get transitionEasing() { return this.getAttribute('transition-easing') ?? this.#config.transitionEasing ?? DEFAULT_EASING; }
+    set transitionEasing(value) { this.setAttribute('transition-easing', value); }
 
     /**
      * Fill in each slide's missing `title`, `description`, `alt`, `creator` and `copyright` from its image file's
@@ -692,11 +712,14 @@ export class ImagePanel extends HTMLElement
             });
             this.#syncMotion();
         }
-        const own = this.#slides[index].transition;
         const transition = duration > 0 && parseTransition(
-            own === undefined || own === null || own === '' ? this.transition : own,
+            ownOr(this.#slides[index].transition, this.transition),
             forward !== (getComputedStyle(this).direction === 'rtl'),
         );
+        if (transition)
+        {
+            transition.easing = validEasing(ownOr(this.#slides[index].transitionEasing, this.transitionEasing));
+        }
         slide.classList.toggle('blend', transition?.type === 'fade');
         if (transition)
         {
@@ -728,11 +751,10 @@ export class ImagePanel extends HTMLElement
     }
 
     /** Starts a transition from `outgoing` (if any) to `incoming`. The incoming slide's animation comes first. */
-    #animateTransition({type, direction, color}, incoming, outgoing, duration)
+    #animateTransition({type, direction, color, feather, easing}, incoming, outgoing, duration)
     {
         // The outgoing slide holds its end state until it's removed, so nothing it shows outside
         // the incoming one (e.g. with object-fit: contain) lingers and then vanishes
-        const easing = MOVE_EASING;
         const out = keyframes => outgoing?.animate(keyframes, {duration, easing, fill: 'forwards'});
         const [dx, dy] = DIRECTIONS[direction] ?? [0, 0];
         const anims = [];
@@ -754,8 +776,15 @@ export class ImagePanel extends HTMLElement
                 break;
             }
             case 'wipe':
-                anims.push(incoming.animate({clipPath: wipeClip(dx, dy)}, {duration, easing}));
+            {
+                // The mask's edge runs from fully transparent to fully opaque, `feather` wide
+                incoming.style.maskImage = wipeMask(dx, dy, feather);
+                const anim = incoming.animate({[WIPE]: ['0%', `calc(100% + ${feather})`]}, {duration, easing});
+                const unmask = () => incoming.style.maskImage = '';
+                anim.finished.then(unmask, unmask);
+                anims.push(anim);
                 break;
+            }
 
             case 'slide':
             case 'push':
@@ -960,6 +989,20 @@ function completeSlide(slide, metadata = {})
     slide.alt ??= slide.title ?? '';
 }
 
+/** A slide's own setting, unless it's left empty. */
+function ownOr(own, fallback)
+{
+    return own === undefined || own === null || own === '' ? fallback : own;
+}
+
+/** The easing if it's one CSS (and so Web Animations) understands, or the default. */
+function validEasing(easing)
+{
+    if (CSS.supports('transition-timing-function', easing)) return easing;
+    console.warn(`[image-panel] Invalid transition easing "${easing}"`);
+    return DEFAULT_EASING;
+}
+
 /**
  * A transition string as `{type, direction, color}`, or null for a hard cut. `forward` is whether
  * navigation went towards the next slide in reading order, for directional transitions without a direction.
@@ -984,12 +1027,21 @@ function parseTransition(value, forward)
         case 'slide':
         case 'push':
         {
-            const key = option.toLowerCase();
-            const set = DIRECTION_SETS[key];
-            const direction = set ? set[Math.floor(Math.random() * set.length)]
-                : DIRECTIONS[key] ? key
-                : forward ? 'left' : 'right';
-            return {type, direction};
+            // A direction or direction set, and for wipes a feather width, in either order.
+            // Pushing diagonally leaves gaps at the corners, so push only goes in cardinal directions.
+            const allowed = direction => type !== 'push' || CARDINALS.includes(direction);
+            let direction = forward ? 'left' : 'right';
+            let feather = '0px';
+            for (const token of rest)
+            {
+                const key = token.toLowerCase();
+                const set = DIRECTION_SETS[key]?.filter(allowed);
+                if (set?.length) direction = set[Math.floor(Math.random() * set.length)];
+                else if (DIRECTIONS[key] && allowed(key)) direction = key;
+                else if (/^\d*\.?\d+$/.test(token)) feather = `${token}px`;
+                else if (CSS.supports('width', token) && /\d/.test(token)) feather = token;
+            }
+            return type === 'wipe' ? {type, direction, feather} : {type, direction};
         }
         default:
             // 'fade', 'dissolve' or anything unrecognised
@@ -998,22 +1050,13 @@ function parseTransition(value, forward)
 }
 
 /**
- * Keyframes revealing the slide behind an edge travelling in direction (dx, dy). Diagonal edges run
- * corner to corner, as a triangle growing from the opposite corner until it covers the panel.
+ * A mask revealing the slide behind an edge travelling in direction (dx, dy), positioned by the `--image-panel-wipe`
+ * property: 0% hides everything, and 100% plus the feather shows everything. Diagonal edges run corner to corner.
  */
-function wipeClip(dx, dy)
+function wipeMask(dx, dy, feather)
 {
-    if (dx && dy)
-    {
-        const x = dx > 0 ? 0 : 100;
-        const y = dy > 0 ? 0 : 100;
-        const triangle = size => `polygon(${x}% ${y}%, ${x + dx * size}% ${y}%, ${x}% ${y + dy * size}%)`;
-        return [triangle(0), triangle(200)];
-    }
-    // inset() takes top, right, bottom, left: start fully inset from the side the edge travels towards
-    const from = [dy < 0, dx > 0, dy > 0, dx < 0].map(side => side ? '100%' : '0');
-    // The far side starts at 0 already, so for a cardinal wipe only one side changes
-    return [`inset(${from.join(' ')})`, 'inset(0)'];
+    const side = [dy < 0 ? 'top' : dy > 0 ? 'bottom' : '', dx < 0 ? 'left' : dx > 0 ? 'right' : ''].filter(Boolean).join(' ');
+    return `linear-gradient(to ${side}, black calc(var(${WIPE}) - ${feather}), transparent var(${WIPE}))`;
 }
 
 /**

@@ -385,12 +385,42 @@ test.describe('transitions', () => {
         expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['100 -100', '0 0']);
     });
 
-    test('wipe clips the incoming slide', async ({page}) => {
+    test('wipe masks the incoming slide behind a moving edge, optionally feathered', async ({page}) => {
         const panel = await mount(page, '<image-panel transition="wipe up" transition-duration="1000"></image-panel>');
-        expect(await transitionTo(panel, IMAGES)).toMatchObject({incoming: ['inset(100% 0px 0px)', 'inset(0px)'], outgoing: []});
+        const mask = () => panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide')[1]?.style.maskImage);
+        const animated = () => panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide')[1].getAnimations()
+            .flatMap(a => a.effect.getKeyframes().map(k => k['--image-panel-wipe'])));
 
-        await panel.evaluate(el => el.transition = 'wipe down-right');
-        expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['polygon(0% 0%, 0% 0%, 0% 0%)', 'polygon(0% 0%, 200% 0%, 0% 200%)']);
+        expect(await transitionTo(panel, IMAGES)).toMatchObject({outgoing: []});
+        expect(await mask()).toMatch(/^linear-gradient\(to top, black calc\(var\(--image-panel-wipe\) - 0px\), transparent var\(--image-panel-wipe\)\)$/);
+        expect((await animated()).length).toBe(2);
+
+        await panel.evaluate(el => el.transition = 'wipe 12% down-right');
+        await transitionTo(panel, IMAGES);
+        expect(await mask()).toContain('to bottom right');
+        expect(await mask()).toContain('- 12%');
+
+        // Halfway through, the edge is part-way across
+        await page.waitForTimeout(400);
+        const wipe = await panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelectorAll('.slide')[1]).getPropertyValue('--image-panel-wipe'));
+        expect(wipe).not.toMatch(/^0%?$/);
+
+        // The mask is removed once the slide is fully revealed
+        await expect(panel.locator('.slide')).toHaveCount(1);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide').style.maskImage)).toBe('');
+    });
+
+    test('a bare number feathers in pixels', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="wipe 40" transition-duration="1000"></image-panel>');
+        await transitionTo(panel, IMAGES);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide')[1].style.maskImage)).toContain('to left, black calc(var(--image-panel-wipe) - 40px)');
+    });
+
+    test('slides clip their image, so rotated images move with straight edges', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        await setConfig(panel, [{src: IMAGES[0], transform: 'rotate(-4deg)'}]);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+        expect(await panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelector('.slide')).overflow)).toBe('clip');
     });
 
     test('random, cardinal and diagonal pick from their sets', async ({page}) => {
@@ -402,9 +432,43 @@ test.describe('transitions', () => {
         const isDiagonal = frame => !frame.split(' ').includes('0');
         for (let i = 0; i < 3; i++)
         {
-            expect(isDiagonal(await pick('push diagonal'))).toBe(true);
-            expect(isDiagonal(await pick('push cardinal'))).toBe(false);
+            expect(isDiagonal(await pick('slide diagonal'))).toBe(true);
+            expect(isDiagonal(await pick('slide cardinal'))).toBe(false);
+            expect(isDiagonal(await pick('push random'))).toBe(false);
         }
+    });
+
+    test('transition easing applies to moving transitions, from the panel or the slide', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="push" transition-easing="ease-out" transition-duration="1000"></image-panel>');
+        const easings = () => panel.evaluate(el => [...el.shadowRoot.querySelectorAll('.slide')]
+            .map(slide => slide.getAnimations().filter(a => a.id !== 'motion').map(a => a.effect.getTiming().easing)));
+
+        await transitionTo(panel, IMAGES);
+        expect(await easings()).toEqual([['ease-out'], ['ease-out']]);
+
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], transition: 'wipe', transitionEasing: 'cubic-bezier(0.16, 1, 0.3, 1)'}]);
+        expect((await easings())[1]).toEqual(['cubic-bezier(0.16, 1, 0.3, 1)']);
+
+        // Fade keeps its linear blend
+        await panel.evaluate(el => el.transition = 'fade');
+        await transitionTo(panel, IMAGES);
+        expect(await easings()).toEqual([['linear'], ['linear']]);
+    });
+
+    test('an invalid easing falls back to the default', async ({page}) => {
+        const warnings = [];
+        page.on('console', message => message.type() === 'warning' && warnings.push(message.text()));
+        const panel = await mount(page, '<image-panel transition="slide" transition-easing="wobbly" transition-duration="1000"></image-panel>');
+        await transitionTo(panel, IMAGES);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelectorAll('.slide')[1].getAnimations()[0].effect.getTiming().easing)).toBe('ease-in-out');
+        expect(warnings.some(text => text.includes('wobbly'))).toBe(true);
+    });
+
+    test('push ignores diagonal directions', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="push up-left" transition-duration="1000"></image-panel>');
+        expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['100 0', '0 0']);
+        await panel.evaluate(el => el.transition = 'push diagonal');
+        expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['100 0', '0 0']);
     });
 
     test('slides can set their own transition, or none', async ({page}) => {

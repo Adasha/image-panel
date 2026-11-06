@@ -373,15 +373,33 @@
                         <option value="">Follow navigation</option>
                         <option value="random">Random</option>
                         <option value="cardinal">Random cardinal</option>
-                        <option value="diagonal">Random diagonal</option>
+                        <option value="diagonal" data-diagonal>Random diagonal</option>
                         <option value="left">Left</option>
                         <option value="right">Right</option>
                         <option value="up">Up</option>
                         <option value="down">Down</option>
-                        <option value="up-left">Up left</option>
-                        <option value="up-right">Up right</option>
-                        <option value="down-left">Down left</option>
-                        <option value="down-right">Down right</option>
+                        <option value="up-left" data-diagonal>Up left</option>
+                        <option value="up-right" data-diagonal>Up right</option>
+                        <option value="down-left" data-diagonal>Down left</option>
+                        <option value="down-right" data-diagonal>Down right</option>
+                    </select>
+                </div>
+                <div class="field" id="feather-field">
+                    <label for="feather">Feather</label>
+                    <input type="range" id="feather" name="feather" min="0" max="50">
+                    <output for="feather" data-unit="%"></output>
+                </div>
+                <div class="field" id="easing-field-panel">
+                    <label for="transitionEasing">Easing</label>
+                    <select id="transitionEasing" name="transitionEasing">
+                        <option value="ease-in-out">Ease in-out</option>
+                        <option value="ease-out">Ease out</option>
+                        <option value="ease-in">Ease in</option>
+                        <option value="ease">Ease</option>
+                        <option value="linear">Linear</option>
+                        <option value="cubic-bezier(0.65, 0, 0.35, 1)">Smooth in-out</option>
+                        <option value="cubic-bezier(0.16, 1, 0.3, 1)">Snappy out</option>
+                        <option value="cubic-bezier(0.34, 1.56, 0.64, 1)">Overshoot</option>
                     </select>
                 </div>
                 <div class="field" id="dip-color-field">
@@ -527,7 +545,7 @@
         const slideFields = $('slide-settings');
 
         const DEFAULTS = {
-            interval: 6000, transition: 'fade', direction: '', dipColor: '#000000', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
+            interval: 6000, transition: 'fade', direction: '', feather: 0, dipColor: '#000000', transitionEasing: 'ease-in-out', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
             loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, autoplay: false, startIndex: 0,
         };
         const MOTIONS = {
@@ -557,7 +575,11 @@
             const [type, ...option] = source.transition.trim().split(/\s+/);
             settings.transition = type;
             if (type === 'dip' && option.length) settings.dipColor = option.join(' ');
-            else settings.direction = option.join(' ');
+            else for (const token of option)
+            {
+                if (token.endsWith('%')) settings.feather = parseFloat(token);
+                else settings.direction = token;
+            }
         }
         settings.motion = Object.keys(MOTIONS).find(key => key === source.motion) ?? DEFAULTS.motion;
         settings.keyboard = true;
@@ -577,15 +599,29 @@
         /** The `transition` string for the chosen effect, direction and colour. */
         function transitionString()
         {
-            const {transition, direction, dipColor} = settings;
+            const {transition, direction, feather, dipColor} = settings;
             if (transition === 'dip') return dipColor === DEFAULTS.dipColor ? 'dip' : `dip ${dipColor}`;
-            if (['wipe', 'slide', 'push'].includes(transition) && direction) return `${transition} ${direction}`;
-            return transition;
+            if (!['wipe', 'slide', 'push'].includes(transition)) return transition;
+            const options = [direction, transition === 'wipe' && feather > 0 && `${feather}%`];
+            return [transition, ...options].filter(Boolean).join(' ');
         }
 
         function syncTransitionFields()
         {
             $('direction-field').hidden = !['wipe', 'slide', 'push'].includes(settings.transition);
+            $('feather-field').hidden = settings.transition !== 'wipe';
+            $('easing-field-panel').hidden = !['wipe', 'slide', 'push'].includes(settings.transition);
+
+            // Push only goes in cardinal directions
+            const push = settings.transition === 'push';
+            for (const option of $('direction').querySelectorAll('[data-diagonal]'))
+            {
+                option.hidden = option.disabled = push;
+            }
+            if (push && $('direction').selectedOptions[0]?.disabled)
+            {
+                $('direction').value = settings.direction = DEFAULTS.direction;
+            }
             $('dip-color-field').hidden = settings.transition !== 'dip';
         }
 
@@ -595,6 +631,7 @@
             panel.interval = settings.interval;
             panel.transitionDuration = settings.transitionDuration;
             panel.transition = transitionString();
+            panel.transitionEasing = settings.transitionEasing;
             panel.fit = settings.fit;
             panel.position = panelPosition();
             panel.loop = settings.loop;
@@ -794,7 +831,7 @@
         function exportConfig()
         {
             const config = {basePath: BASE_PATH};
-            for (const key of ['autoplay', 'interval', 'transitionDuration', 'shuffle', 'loop', 'startIndex', 'fit', 'metadata'])
+            for (const key of ['autoplay', 'interval', 'transitionEasing', 'transitionDuration', 'shuffle', 'loop', 'startIndex', 'fit', 'metadata'])
             {
                 if (settings[key] !== DEFAULTS[key]) config[key] = settings[key];
             }
