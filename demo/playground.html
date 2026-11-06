@@ -217,6 +217,9 @@
             gap: 0.5rem;
             align-items: center;
         }
+        .field[hidden] {
+            display: none;
+        }
         .field > :nth-child(2):last-child {
             grid-column: span 2;
         }
@@ -354,7 +357,39 @@
                     <output for="interval" data-unit="s"></output>
                 </div>
                 <div class="field">
-                    <label for="transitionDuration">Transition</label>
+                    <label for="transition">Transition</label>
+                    <select id="transition" name="transition">
+                        <option value="fade">Fade</option>
+                        <option value="dip">Dip to colour</option>
+                        <option value="wipe">Wipe</option>
+                        <option value="slide">Slide</option>
+                        <option value="push">Push</option>
+                        <option value="none">None</option>
+                    </select>
+                </div>
+                <div class="field" id="direction-field">
+                    <label for="direction">Direction</label>
+                    <select id="direction" name="direction">
+                        <option value="">Follow navigation</option>
+                        <option value="random">Random</option>
+                        <option value="cardinal">Random cardinal</option>
+                        <option value="diagonal">Random diagonal</option>
+                        <option value="left">Left</option>
+                        <option value="right">Right</option>
+                        <option value="up">Up</option>
+                        <option value="down">Down</option>
+                        <option value="up-left">Up left</option>
+                        <option value="up-right">Up right</option>
+                        <option value="down-left">Down left</option>
+                        <option value="down-right">Down right</option>
+                    </select>
+                </div>
+                <div class="field" id="dip-color-field">
+                    <label for="dipColor">Dip colour</label>
+                    <input type="color" id="dipColor" name="dipColor">
+                </div>
+                <div class="field">
+                    <label for="transitionDuration">Duration</label>
                     <input type="range" id="transitionDuration" name="transitionDuration" min="0" max="3000" step="100">
                     <output for="transitionDuration" data-unit="s"></output>
                 </div>
@@ -443,6 +478,10 @@
                     <input type="text" id="slide-clip" name="clip" placeholder="e.g. inset(5% round 12px)">
                 </div>
                 <div class="field">
+                    <label for="slide-transition">Transition</label>
+                    <input type="text" id="slide-transition" name="transition" placeholder="Panel default, e.g. push up-left">
+                </div>
+                <div class="field">
                     <label for="slide-motion">Motion</label>
                     <select id="slide-motion" name="motion">
                         <option value="">Panel default</option>
@@ -488,7 +527,7 @@
         const slideFields = $('slide-settings');
 
         const DEFAULTS = {
-            interval: 6000, transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
+            interval: 6000, transition: 'fade', direction: '', dipColor: '#000000', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
             loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, autoplay: false, startIndex: 0,
         };
         const MOTIONS = {
@@ -512,6 +551,14 @@
         {
             if (key in source) settings[key] = source[key];
         }
+        // Split the config's transition string into the form's fields
+        if (typeof source.transition === 'string')
+        {
+            const [type, ...option] = source.transition.trim().split(/\s+/);
+            settings.transition = type;
+            if (type === 'dip' && option.length) settings.dipColor = option.join(' ');
+            else settings.direction = option.join(' ');
+        }
         settings.motion = Object.keys(MOTIONS).find(key => key === source.motion) ?? DEFAULTS.motion;
         settings.keyboard = true;
 
@@ -527,11 +574,27 @@
             ? 'center'
             : `${settings.positionX}% ${settings.positionY}%`;
 
+        /** The `transition` string for the chosen effect, direction and colour. */
+        function transitionString()
+        {
+            const {transition, direction, dipColor} = settings;
+            if (transition === 'dip') return dipColor === DEFAULTS.dipColor ? 'dip' : `dip ${dipColor}`;
+            if (['wipe', 'slide', 'push'].includes(transition) && direction) return `${transition} ${direction}`;
+            return transition;
+        }
+
+        function syncTransitionFields()
+        {
+            $('direction-field').hidden = !['wipe', 'slide', 'push'].includes(settings.transition);
+            $('dip-color-field').hidden = settings.transition !== 'dip';
+        }
+
         /** Settings the panel reads as it goes, so they're applied as attributes without reloading. */
         function applyLive()
         {
             panel.interval = settings.interval;
             panel.transitionDuration = settings.transitionDuration;
+            panel.transition = transitionString();
             panel.fit = settings.fit;
             panel.position = panelPosition();
             panel.loop = settings.loop;
@@ -604,6 +667,7 @@
                 else input.value = settings[input.name];
             }
             form.elements.startIndex.max = slides.length - 1;
+            syncTransitionFields();
             updateOutputs();
         }
 
@@ -620,6 +684,7 @@
             const {name} = event.target;
             readForm();
             updateOutputs();
+            syncTransitionFields();
             applyLive();
             if (name === 'fit' || name.startsWith('position')) preview(order[panel.currentIndex]);
             renderCode();
@@ -661,7 +726,7 @@
             const slide = slides[index];
             const {elements} = slideFields;
             $('slide-number').textContent = `${order.indexOf(index) + 1}: ${slide.src}`;
-            for (const name of ['fit', 'position', 'flip', 'transform', 'clip'])
+            for (const name of ['fit', 'position', 'flip', 'transform', 'clip', 'transition'])
             {
                 elements[name].value = slide[name] ?? '';
             }
@@ -682,7 +747,7 @@
         {
             const slide = slides[editing];
             const {elements} = slideFields;
-            for (const name of ['fit', 'position', 'flip', 'transform', 'clip'])
+            for (const name of ['fit', 'position', 'flip', 'transform', 'clip', 'transition'])
             {
                 slide[name] = elements[name].value.trim();
             }
@@ -733,6 +798,7 @@
             {
                 if (settings[key] !== DEFAULTS[key]) config[key] = settings[key];
             }
+            if (transitionString() !== 'fade') config.transition = transitionString();
             if (panelPosition() !== 'center') config.position = panelPosition();
             if (settings.motion !== 'none') config.motion = MOTIONS[settings.motion];
             config.slides = slides.map(clean);

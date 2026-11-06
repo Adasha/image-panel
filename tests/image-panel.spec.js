@@ -316,6 +316,120 @@ test.describe('navigation', () => {
 });
 
 
+
+test.describe('transitions', () => {
+    /** Starts a transition to the next slide, and returns what's animating on each slide and the dip layer. */
+    async function transitionTo(panel, config, move = 'next')
+    {
+        await setConfig(panel, config);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+        await panel.evaluate((el, method) => el[method](), move);
+        await expect(panel.locator('.slide')).toHaveCount(2);
+        return panel.evaluate(el => {
+            const frames = node => node.getAnimations().filter(a => a.id !== 'motion')
+                .flatMap(a => a.effect.getKeyframes().map(({translate, clipPath, opacity}) => translate ? offset(translate) : clipPath ?? opacity));
+            // Browsers serialise translate differently ("0 0", "0px", "100%"), so compare as [x, y] percentages
+            const offset = value => {
+                const [x, y = 0] = value.split(' ').map(parseFloat);
+                return `${x} ${y}`;
+            };
+            const [outgoing, incoming] = el.shadowRoot.querySelectorAll('.slide');
+            const dip = el.shadowRoot.querySelector('.dip');
+            return {
+                incoming: frames(incoming),
+                outgoing: frames(outgoing),
+                dip: frames(dip),
+                dipColor: dip.style.backgroundColor,
+                blend: incoming.classList.contains('blend'),
+            };
+        });
+    }
+
+    test('fade is the default, and blends the slides', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="1000"></image-panel>');
+        const result = await transitionTo(panel, IMAGES);
+        expect(result).toMatchObject({incoming: ['0', '1'], outgoing: ['1', '0'], blend: true});
+    });
+
+    test('dip fades through a colour, swapping slides halfway', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="dip white" transition-duration="1000"></image-panel>');
+        const result = await transitionTo(panel, IMAGES);
+        expect(result).toMatchObject({dip: ['0', '1', '0'], dipColor: 'white', blend: false});
+
+        await page.waitForTimeout(200);
+        const [outgoing, incoming] = await panel.evaluate(el =>
+            [...el.shadowRoot.querySelectorAll('.slide')].map(s => Number(getComputedStyle(s).opacity)));
+        expect([outgoing, incoming]).toEqual([1, 0]);
+    });
+
+    test('plain dip uses the CSS custom property', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="dip" transition-duration="1000" style="--image-panel-dip-color: rgb(255, 0, 0)"></image-panel>');
+        await transitionTo(panel, IMAGES);
+        expect(await panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelector('.dip')).backgroundColor)).toBe('rgb(255, 0, 0)');
+    });
+
+    test('push moves both slides, following the navigation direction', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="push" transition-duration="1000"></image-panel>');
+        expect(await transitionTo(panel, IMAGES)).toMatchObject({incoming: ['100 0', '0 0'], outgoing: ['0 0', '-100 0']});
+        expect(await transitionTo(panel, IMAGES, 'prev')).toMatchObject({incoming: ['-100 0', '0 0'], outgoing: ['0 0', '100 0']});
+    });
+
+    test('directions follow the writing direction', async ({page}) => {
+        const panel = await mount(page, '<image-panel dir="rtl" transition="slide" transition-duration="1000"></image-panel>');
+        expect(await transitionTo(panel, IMAGES)).toMatchObject({incoming: ['-100 0', '0 0'], outgoing: []});
+    });
+
+    test('slide and push take explicit directions', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="slide down-left" transition-duration="1000"></image-panel>');
+        expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['100 -100', '0 0']);
+    });
+
+    test('wipe clips the incoming slide', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="wipe up" transition-duration="1000"></image-panel>');
+        expect(await transitionTo(panel, IMAGES)).toMatchObject({incoming: ['inset(100% 0px 0px)', 'inset(0px)'], outgoing: []});
+
+        await panel.evaluate(el => el.transition = 'wipe down-right');
+        expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['polygon(0% 0%, 0% 0%, 0% 0%)', 'polygon(0% 0%, 200% 0%, 0% 200%)']);
+    });
+
+    test('random, cardinal and diagonal pick from their sets', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="1000"></image-panel>');
+        const pick = async transition => {
+            await panel.evaluate((el, value) => el.transition = value, transition);
+            return (await transitionTo(panel, IMAGES)).incoming[0];
+        };
+        const isDiagonal = frame => !frame.split(' ').includes('0');
+        for (let i = 0; i < 3; i++)
+        {
+            expect(isDiagonal(await pick('push diagonal'))).toBe(true);
+            expect(isDiagonal(await pick('push cardinal'))).toBe(false);
+        }
+    });
+
+    test('slides can set their own transition, or none', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition="push" transition-duration="1000"></image-panel>');
+        await setConfig(panel, [IMAGES[0], {src: IMAGES[1], transition: 'none'}, {src: IMAGES[2], transition: 'dip'}]);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+
+        await record(panel, 'slidechange', 'slidechangeend');
+        await panel.evaluate(el => el.next());
+        await expect.poll(async () => (await events(page)).length).toBe(2);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+
+        await panel.evaluate(el => el.next());
+        await expect(panel.locator('.slide')).toHaveCount(2);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.dip').getAnimations().length)).toBe(1);
+    });
+
+    test('transition comes from the config too', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="1000"></image-panel>');
+        expect((await transitionTo(panel, {transition: 'slide up', slides: IMAGES})).incoming).toEqual(['0 100', '0 0']);
+        expect(await panel.evaluate(el => el.transition)).toBe('slide up');
+    });
+});
+
 test.describe('playback', () => {
     test('autoplays, and pause() stops it', async ({page}) => {
         const panel = await mount(page, '<image-panel autoplay interval="150" transition-duration="0"></image-panel>');

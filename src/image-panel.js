@@ -15,6 +15,19 @@ const FLIPS = {
     both: 'scale(-1, -1)',
 };
 
+const DIRECTIONS = {
+    left: [-1, 0], right: [1, 0], up: [0, -1], down: [0, 1],
+    'up-left': [-1, -1], 'up-right': [1, -1], 'down-left': [-1, 1], 'down-right': [1, 1],
+};
+const CARDINALS = ['left', 'right', 'up', 'down'];
+const DIAGONALS = ['up-left', 'up-right', 'down-left', 'down-right'];
+const DIRECTION_SETS = {
+    random: [...CARDINALS, ...DIAGONALS],
+    cardinal: CARDINALS,
+    diagonal: DIAGONALS,
+};
+const MOVE_EASING = 'ease-in-out';
+
 const KEYS = {
     ArrowLeft: (panel, rtl) => ({step: rtl ? 1 : -1}),
     ArrowRight: (panel, rtl) => ({step: rtl ? -1 : 1}),
@@ -24,7 +37,7 @@ const KEYS = {
 
 const UPGRADABLE = [
     'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
-    'startIndex', 'fit', 'position', 'sizes', 'motion', 'keyboard', 'pauseOnHover',
+    'startIndex', 'fit', 'position', 'sizes', 'motion', 'transition', 'keyboard', 'pauseOnHover',
 ];
 
 const template = document.createElement('template');
@@ -47,9 +60,16 @@ template.innerHTML = `
     .slides {
         isolation: isolate;
     }
-    .slide {
+    .slide.blend {
         /* Opacities add rather than layer, so a cross-fade stays solid where slides overlap */
         mix-blend-mode: plus-lighter;
+    }
+    .dip {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+        background-color: var(--image-panel-dip-color, black);
     }
     img {
         display: block;
@@ -60,6 +80,7 @@ template.innerHTML = `
     }
 </style>
 <div class="slides"></div>
+<div class="dip" part="dip"></div>
 `;
 
 
@@ -86,11 +107,13 @@ template.innerHTML = `
  * @fires resume          - The last hold was released while playing.
  * @fires countdown       - The auto-advance timer started or restarted. detail: { remaining, interval }
  *
- * @csspart slide - Wrapper around each slide; this is what fades and moves.
+ * @csspart slide - Wrapper around each slide; this is what transitions and moves.
  * @csspart image - The <img> inside each slide.
+ * @csspart dip   - The colour layer a `dip` transition fades through.
  *
- * @cssprop --image-panel-fit      - Default object-fit (cover).
- * @cssprop --image-panel-position - Default object-position (center).
+ * @cssprop --image-panel-fit       - Default object-fit (cover).
+ * @cssprop --image-panel-position  - Default object-position (center).
+ * @cssprop --image-panel-dip-color - Colour a `dip` transition fades through, unless it names its own (black).
  */
 export class ImagePanel extends HTMLElement
 {
@@ -99,6 +122,7 @@ export class ImagePanel extends HTMLElement
     #internals = this.attachInternals();
     #root = this.attachShadow({mode: 'open'});
     #stage;
+    #dip;
 
     #source = null;         // 'src' | 'config' | 'children'
     #config = {};
@@ -108,7 +132,7 @@ export class ImagePanel extends HTMLElement
     #target = -1;           // slide being loaded, or the current one
     #navId = 0;
     #busy = false;
-    #anim = null;
+    #anims = [];            // the running transition's animations
     #preload = null;
     #request = null;
     #motion;                // non-string `motion` set from JS
@@ -131,6 +155,7 @@ export class ImagePanel extends HTMLElement
 
         this.#root.append(template.content.cloneNode(true));
         this.#stage = this.#root.querySelector('.slides');
+        this.#dip = this.#root.querySelector('.dip');
 
         this.#internals.role = 'group';
         this.#internals.ariaRoleDescription = 'carousel';
@@ -260,7 +285,7 @@ export class ImagePanel extends HTMLElement
     get interval() { return toNumber(this.getAttribute('interval')) ?? toNumber(this.#config.interval) ?? DEFAULT_INTERVAL; }
     set interval(ms) { this.setAttribute('interval', ms); }
 
-    /** Cross-fade duration in milliseconds. 0 for a hard cut. Ignored when the user prefers reduced motion. */
+    /** Transition duration in milliseconds. 0 for a hard cut. Ignored when the user prefers reduced motion. */
     get transitionDuration() { return toNumber(this.getAttribute('transition-duration')) ?? toNumber(this.#config.transitionDuration) ?? DEFAULT_TRANSITION; }
     set transitionDuration(ms) { this.setAttribute('transition-duration', ms); }
 
@@ -312,6 +337,13 @@ export class ImagePanel extends HTMLElement
             this.removeAttribute('motion');
         }
     }
+
+    /**
+     * Default transition for slides without their own: `'fade'`, `'none'`, `'dip [colour]'`, or
+     * `'wipe'`, `'slide'` or `'push'` with an optional direction. Takes effect from the next slide.
+     */
+    get transition() { return this.getAttribute('transition') ?? this.#config.transition ?? 'fade'; }
+    set transition(value) { this.setAttribute('transition', value); }
 
     /**
      * Fill in each slide's missing `title`, `description`, `alt`, `creator` and `copyright` from its image file's
@@ -425,7 +457,7 @@ export class ImagePanel extends HTMLElement
         {
             this.#play('start');
         }
-        this.#show(this.startIndex, 1, 'start');
+        this.#show(this.startIndex, 1, 'start', true);
     }
 
     #createImage(index, priority, trigger)
@@ -557,7 +589,7 @@ export class ImagePanel extends HTMLElement
     {
         // Without looping, stepping off either end does nothing
         if (!this.loop && this.#nextLoadable(this.#target + step, step) === -1) return;
-        this.#show(this.#target + step, step, trigger);
+        this.#show(this.#target + step, step, trigger, step > 0);
     }
 
     #goTo(index, trigger)
@@ -565,10 +597,11 @@ export class ImagePanel extends HTMLElement
         index = Math.trunc(Number(index));
         if (!Number.isFinite(index) || (index === this.#index && !this.#busy)) return;
         if (!this.loop && (index < 0 || index >= this.#slides.length)) return;
-        this.#show(index, 1, trigger);
+        this.#show(index, 1, trigger, index >= this.#target);
     }
 
-    async #show(index, step, trigger)
+    /** `forward` says which way navigation went, for transitions that follow it. */
+    async #show(index, step, trigger, forward)
     {
         if (!this.#slides.length) return;
 
@@ -601,7 +634,7 @@ export class ImagePanel extends HTMLElement
 
             if (img)
             {
-                return this.#reveal(img, target, navId, trigger, looped);
+                return this.#reveal(img, target, navId, trigger, looped, forward);
             }
             index = target + step;
         }
@@ -618,7 +651,7 @@ export class ImagePanel extends HTMLElement
         this.#fail(new Error('No slides could be loaded'), trigger);
     }
 
-    async #reveal(img, index, navId, trigger, looped)
+    async #reveal(img, index, navId, trigger, looped, forward)
     {
         const slide = document.createElement('div');
         slide.className = 'slide';
@@ -627,7 +660,8 @@ export class ImagePanel extends HTMLElement
 
         // Snap any in-progress transition to its end before starting the next,
         // leaving only the slide on screen to fade out
-        this.#anim?.finish();
+        for (const anim of this.#anims) anim.finish();
+        this.#anims = [];
         const outgoing = this.#stage.lastElementChild;
         while (outgoing?.previousElementSibling)
         {
@@ -658,14 +692,18 @@ export class ImagePanel extends HTMLElement
             });
             this.#syncMotion();
         }
-        if (duration > 0)
+        const own = this.#slides[index].transition;
+        const transition = duration > 0 && parseTransition(
+            own === undefined || own === null || own === '' ? this.transition : own,
+            forward !== (getComputedStyle(this).direction === 'rtl'),
+        );
+        slide.classList.toggle('blend', transition?.type === 'fade');
+        if (transition)
         {
-            // Fade the old slide out too, so nothing it shows outside the new one (e.g. with
-            // object-fit: contain) lingers and then vanishes
-            outgoing?.animate([{opacity: 1}, {opacity: 0}], {duration, fill: 'forwards'});
-            const anim = this.#anim = slide.animate([{opacity: 0}, {opacity: 1}], {duration});
-            await anim.finished.catch(() => {});
-            if (this.#anim === anim) this.#anim = null;
+            const anims = this.#anims = this.#animateTransition(transition, slide, outgoing, duration);
+            // The incoming slide's animation always spans the whole transition
+            await anims[0].finished.catch(() => {});
+            if (this.#anims === anims) this.#anims = [];
         }
 
         // Everything underneath is now hidden
@@ -687,6 +725,53 @@ export class ImagePanel extends HTMLElement
             this.#tick(trigger);
             this.#preloadFrom(index + 1);
         }
+    }
+
+    /** Starts a transition from `outgoing` (if any) to `incoming`. The incoming slide's animation comes first. */
+    #animateTransition({type, direction, color}, incoming, outgoing, duration)
+    {
+        // The outgoing slide holds its end state until it's removed, so nothing it shows outside
+        // the incoming one (e.g. with object-fit: contain) lingers and then vanishes
+        const easing = MOVE_EASING;
+        const out = keyframes => outgoing?.animate(keyframes, {duration, easing, fill: 'forwards'});
+        const [dx, dy] = DIRECTIONS[direction] ?? [0, 0];
+        const anims = [];
+
+        switch (type)
+        {
+            case 'dip':
+            {
+                // Fade to the colour, swap slides while it covers everything, then fade back
+                const swap = {duration, easing: 'steps(2, jump-none)'};
+                anims.push(incoming.animate([{opacity: 0}, {opacity: 1}], swap));
+                outgoing && anims.push(outgoing.animate([{opacity: 1}, {opacity: 0}], {...swap, fill: 'forwards'}));
+                this.#dip.style.backgroundColor = color ?? '';
+                anims.push(this.#dip.animate([
+                    {opacity: 0, easing: 'ease-in'},
+                    {opacity: 1, easing: 'ease-out'},
+                    {opacity: 0},
+                ], {duration}));
+                break;
+            }
+            case 'wipe':
+                anims.push(incoming.animate({clipPath: wipeClip(dx, dy)}, {duration, easing}));
+                break;
+
+            case 'slide':
+            case 'push':
+                // `translate` composes with any motion on `transform`, and its percentages are of the panel
+                anims.push(incoming.animate({translate: [`${-dx * 100}% ${-dy * 100}%`, '0 0']}, {duration, easing}));
+                if (type === 'push')
+                {
+                    anims.push(out({translate: ['0 0', `${dx * 100}% ${dy * 100}%`]}));
+                }
+                break;
+
+            default:
+                anims.push(incoming.animate([{opacity: 0}, {opacity: 1}], {duration}));
+                anims.push(outgoing?.animate([{opacity: 1}, {opacity: 0}], {duration, fill: 'forwards'}));
+        }
+        return anims.filter(Boolean);
     }
 
     /** Auto-advance has run out of slides. */
@@ -873,6 +958,62 @@ function completeSlide(slide, metadata = {})
         slide[field] ??= value;
     }
     slide.alt ??= slide.title ?? '';
+}
+
+/**
+ * A transition string as `{type, direction, color}`, or null for a hard cut. `forward` is whether
+ * navigation went towards the next slide in reading order, for directional transitions without a direction.
+ */
+function parseTransition(value, forward)
+{
+    if (value === false) return null;
+    const [name = '', ...rest] = String(value ?? '').trim().split(/\s+/);
+    const type = name.toLowerCase();
+    const option = rest.join(' ');
+
+    switch (type)
+    {
+        case 'none':
+        case 'cut':
+            return null;
+
+        case 'dip':
+            return {type, color: option || undefined};
+
+        case 'wipe':
+        case 'slide':
+        case 'push':
+        {
+            const key = option.toLowerCase();
+            const set = DIRECTION_SETS[key];
+            const direction = set ? set[Math.floor(Math.random() * set.length)]
+                : DIRECTIONS[key] ? key
+                : forward ? 'left' : 'right';
+            return {type, direction};
+        }
+        default:
+            // 'fade', 'dissolve' or anything unrecognised
+            return {type: 'fade'};
+    }
+}
+
+/**
+ * Keyframes revealing the slide behind an edge travelling in direction (dx, dy). Diagonal edges run
+ * corner to corner, as a triangle growing from the opposite corner until it covers the panel.
+ */
+function wipeClip(dx, dy)
+{
+    if (dx && dy)
+    {
+        const x = dx > 0 ? 0 : 100;
+        const y = dy > 0 ? 0 : 100;
+        const triangle = size => `polygon(${x}% ${y}%, ${x + dx * size}% ${y}%, ${x}% ${y + dy * size}%)`;
+        return [triangle(0), triangle(200)];
+    }
+    // inset() takes top, right, bottom, left: start fully inset from the side the edge travels towards
+    const from = [dy < 0, dx > 0, dy > 0, dx < 0].map(side => side ? '100%' : '0');
+    // The far side starts at 0 already, so for a cardinal wipe only one side changes
+    return [`inset(${from.join(' ')})`, 'inset(0)'];
 }
 
 /**

@@ -1,6 +1,6 @@
 # image-panel
 
-A small, dependency-free image viewer web component. It shows one image at a time, cross-fades between them, and can auto-advance. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
+A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
 
 It's not trying to be a gallery. It's the viewport part of one, so it fits into slideshows, hero banners, lightboxes, kiosks and other media apps.
 
@@ -94,7 +94,8 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `basePath` | | | Prefix for slide URLs. Relative paths resolve against the JSON file's URL, or the page for inline config. |
 | `autoplay` | `autoplay` | off | Start advancing automatically. |
 | `interval` | `interval` | `6000` | Milliseconds each slide is shown for, after its transition finishes. |
-| `transitionDuration` | `transition-duration` | `1000` | Cross-fade length in ms. `0` for a hard cut. Always `0` when the user prefers reduced motion. |
+| `transition` | `transition` | `"fade"` | Default [transition](#transitions) for slides without their own, e.g. `"dip white"` or `"push diagonal"`. |
+| `transitionDuration` | `transition-duration` | `1000` | Transition length in ms. `0` for a hard cut. Always `0` when the user prefers reduced motion. |
 | `shuffle` | `shuffle` | off | Shuffle the slides when loaded. |
 | `loop` | `loop` | on | Wrap round from the last slide to the first, and back. Set `loop="false"` to stop at the ends: autoplay then pauses on the last slide. |
 | `startIndex` | `start-index` | `0` | First slide to show. |
@@ -123,10 +124,38 @@ A slide can be a plain URL string, or an object with these fields. Child images 
 | `flip` | | `horizontal`, `vertical` or `both`. |
 | `transform` | | Any CSS transform, e.g. `"scale(1.2) rotate(-4deg)"`. Applied before `flip`. |
 | `clip` | | Any CSS `clip-path`, e.g. `"inset(5% round 8px)"`. |
+| `transition` | | How this slide transitions in, overriding the panel's. See [Transitions](#transitions). |
 | `motion` | | A slow pan or zoom over the slide's time on screen: `"random"` or a motion spec. See [Motion](#motion). `false` or `"none"` turns off a panel-wide default. |
 | `style` | | Raw inline CSS for the `<img>`, for anything else. The fields above take priority. |
 
 Any other fields you add are kept and passed back to you in events.
+
+### Transitions
+
+`transition` sets how each slide replaces the last. It's a type, optionally followed by an option:
+
+| Type | Option | |
+| --- | --- | --- |
+| `fade` | | Cross-fade (dissolve). The default. `dissolve` works too. |
+| `dip` | colour | Fade out to a colour, then in from it, e.g. `"dip white"` or `"dip #1a1a1a"`. Without a colour it uses `--image-panel-dip-color`, which defaults to black. |
+| `wipe` | direction | A straight edge sweeps across, revealing the new slide over the old. |
+| `slide` | direction | The new slide slides in over the old one. |
+| `push` | direction | The new slide slides in and pushes the old one out. |
+| `none` | | A hard cut. `cut` works too, as does `"transition": false` on a slide. |
+
+Directions are the way things move: `left`, `right`, `up`, `down`, `up-left`, `up-right`, `down-left` or `down-right`. Diagonal wipes sweep corner to corner. Instead of a fixed direction, `random` picks one of all eight each time, `cardinal` one of the first four, and `diagonal` one of the last four. With no direction, it follows the navigation: moving forward goes left, and back goes right (the other way round in a right-to-left layout).
+
+```html
+<image-panel src="slideshow.json" transition="push"></image-panel>
+```
+```json
+{"transition": "wipe diagonal", "slides": ["a.jpg", {"src": "b.jpg", "transition": "dip white"}]}
+```
+
+- A slide's own `transition` decides how it comes in, overriding the panel's. Like `motion`, changes take effect from the next slide.
+- `transitionDuration` sets the length of every type, and `0` makes them all cuts. Everything but `fade` eases in and out.
+- `slide` and `wipe` don't move the old slide, so with `fit: contain` it shows round the edges of the new one until the transition ends. `push`, `fade` and `dip` don't have this issue.
+- Wipes clip the slide wrapper, so if the slide also has `motion`, the edge sweeps across the moving image and takes slightly less than the full duration to cross the visible part of the panel.
 
 ### Motion
 
@@ -205,7 +234,7 @@ These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
+Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
 
 ### Events
 
@@ -267,8 +296,10 @@ See [demo/index.html](demo/index.html) for a fuller example, and [demo/playgroun
 
 The component renders into an open shadow root.
 
-- `::part(slide)` targets the wrapper that fades and carries any `motion`, and `::part(image)` the `<img>` inside it.
+- `::part(slide)` targets the wrapper that transitions and carries any `motion`, and `::part(image)` the `<img>` inside it.
+- `::part(dip)` is the colour layer a `dip` transition fades through.
 - `--image-panel-fit` and `--image-panel-position` set the default `object-fit` and `object-position`.
+- `--image-panel-dip-color` sets the colour for `dip` transitions that don't name their own.
 
 ## Accessibility
 

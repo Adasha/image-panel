@@ -72,3 +72,19 @@ test('transport buttons drive the panel', async ({page}) => {
     await expect(page.locator('#announcer')).toContainText('Slide 5 of 5');
     await expect(page.locator('#log li').first()).toContainText('api');
 });
+
+test('transition controls set the panel transition and show only the options that apply', async ({page}) => {
+    const panel = page.locator('#panel');
+    await expect(page.getByLabel('Direction')).toBeHidden();
+    await expect(page.getByLabel('Dip colour')).toBeHidden();
+
+    await page.locator('#transition').selectOption('push');
+    await page.getByLabel('Direction').selectOption('diagonal');
+    await expect(panel).toHaveAttribute('transition', 'push diagonal');
+    await expect(page.locator('#code')).toContainText('"transition": "push diagonal"');
+
+    await page.locator('#transition').selectOption('dip');
+    await expect(page.getByLabel('Direction')).toBeHidden();
+    await page.getByLabel('Dip colour').fill('#ffffff');
+    await expect(panel).toHaveAttribute('transition', 'dip #ffffff');
+});
