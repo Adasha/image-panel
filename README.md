@@ -196,7 +196,7 @@ panel.motion = 'random';                               // strings are reflected 
 
 Changing it affects the next slide shown, not the current one. Set `panel.motion = null` to fall back to the config.
 
-- The transforms apply to the slide wrapper (`::part(slide)`), in panel coordinates, so they combine with the image's own `transform` and `flip` rather than replacing them. Translating by a percentage moves by that much of the panel.
+- The transforms apply to a wrapper round the image (`::part(motion)`), in panel coordinates, so they combine with the image's own `transform` and `flip` rather than replacing them. Translating by a percentage moves by that much of the panel.
 - Zoom in rather than out (scale ≥ 1 throughout), or the panel background shows at the edges. [`fill-panel`](#filling-the-panel) does this for you.
 - Motion only runs while the panel is playing: it freezes with `pause()` and whenever auto-advance is held (focus, hover, hidden or offscreen), and it holds on its last frame if the slide outlives it. Without `autoplay`, slides stay still.
 - It's turned off entirely when the user prefers reduced motion.
@@ -316,7 +316,7 @@ See [demo/index.html](demo/index.html) for a fuller example, and [demo/playgroun
 
 The component renders into an open shadow root.
 
-- `::part(slide)` targets the wrapper that transitions and carries any `motion`, and `::part(image)` the `<img>` inside it.
+- `::part(slide)` targets the wrapper that transitions and clips the slide to the panel, `::part(motion)` the wrapper inside it that carries any `motion`, and `::part(image)` the `<img>` inside that.
 - `::part(dip)` is the colour layer a `dip` transition fades through.
 - `--image-panel-fit` and `--image-panel-position` set the default `object-fit` and `object-position`.
 - `--image-panel-dip-color` sets the colour for `dip` transitions that don't name their own.

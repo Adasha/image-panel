@@ -61,7 +61,7 @@ template.innerHTML = `
     :host([hidden]) {
         display: none;
     }
-    .slides, .slide, img {
+    .slides, .slide, .motion, img {
         position: absolute;
         inset: 0;
     }
@@ -69,7 +69,8 @@ template.innerHTML = `
         isolation: isolate;
     }
     .slide {
-        /* Keep rotated or offset images inside the slide, so moving slides have straight edges */
+        /* Keep rotated or offset images inside the slide, so moving slides have straight edges. Motion runs
+           inside it, on .motion, so the edges stay square to the panel while the image moves */
         overflow: clip;
     }
     .slide.blend {
@@ -687,7 +688,11 @@ export class ImagePanel extends HTMLElement
         const slide = document.createElement('div');
         slide.className = 'slide';
         slide.setAttribute('part', 'slide');
-        slide.append(img);
+        const frame = document.createElement('div');
+        frame.className = 'motion';
+        frame.setAttribute('part', 'motion');
+        frame.append(img);
+        slide.append(frame);
 
         // Snap any in-progress transition to its end before starting the next,
         // leaving only the slide on screen to fade out
@@ -725,8 +730,8 @@ export class ImagePanel extends HTMLElement
             // changing the pan or angle. An overshoot would carry the motion past the zoom worked out for it
             // It's there even when no zoom is needed yet, so a resize only has to change its keyframes
             if (fill) motion.easing = clampEasing(motion.easing);
-            slide.animate(motion.keyframes, {...timing, id: 'motion', easing: motion.easing});
-            if (fill) img.animate(motionCoverZoom(slide, motion.keyframes), {...timing, id: 'motion-zoom', easing: motion.easing});
+            frame.animate(motion.keyframes, {...timing, id: 'motion', easing: motion.easing});
+            if (fill) img.animate(motionCoverZoom(frame, img, motion.keyframes), {...timing, id: 'motion-zoom', easing: motion.easing});
             this.#syncMotion();
         }
         const transition = duration > 0 && parseTransition(
@@ -911,14 +916,15 @@ export class ImagePanel extends HTMLElement
         if (!this.fillPanel) return;
         for (const slide of this.#stage.children)
         {
-            const img = slide.querySelector('img');
+            const frame = slide.querySelector('.motion');
+            const img = frame.querySelector('img');
             coverPanel(img);
-            const motion = slide.getAnimations().find(anim => anim.id === 'motion');
+            const motion = frame.getAnimations().find(anim => anim.id === 'motion');
             const zoom = img.getAnimations().find(anim => anim.id === 'motion-zoom');
             if (motion && zoom)
             {
                 const keyframes = motion.effect.getKeyframes().map(({transform, offset}) => ({transform, offset}));
-                zoom.effect.setKeyframes(motionCoverZoom(slide, keyframes));
+                zoom.effect.setKeyframes(motionCoverZoom(frame, img, keyframes));
             }
         }
     }
@@ -1056,24 +1062,30 @@ function coverPanel(img)
 }
 
 /**
- * The transform, with extra zoom if needed so the attached element, transformed about its centre, still covers
- * its own untransformed box. Zooming in on top of any pan or rotation keeps the composition, just closer.
+ * The transform, with extra zoom if needed so the attached element still covers its own untransformed box.
+ * Zooming in on top of any pan or rotation keeps the composition, just closer. The zoom is about the
+ * box's centre wherever the transform pivots, since zooming about a corner could never cover the far side.
  */
 function covering(el, transform)
 {
-    const width = el.offsetWidth / 2;
-    const height = el.offsetHeight / 2;
-    if (!width || !height || !transform || transform === 'none') return transform;
+    const box = measure(el);
+    if (!box.width || !box.height || !transform || transform === 'none') return transform;
 
     // Let the browser resolve percentages and units into a matrix
     const previous = el.style.transform;
     el.style.transform = transform;
-    const zoom = coverZoom(getComputedStyle(el).transform, width, height);
+    const zoom = coverZoom(getComputedStyle(el).transform, box);
     el.style.transform = previous;
 
-    // A transform that collapses the element can't be rescued
+    // A transform that collapses the element, or turns it away, can't be rescued
     if (!Number.isFinite(zoom)) return 'none';
-    return zoom > 1.0001 ? `${transform} scale(${zoom.toFixed(4)})` : transform;
+    if (zoom <= 1.0001) return transform;
+    const scale = `scale(${zoom.toFixed(4)})`;
+    // The zoom comes after the transform, so it's about the transform origin unless moved to the centre
+    const [dx, dy] = fromOrigin(box);
+    return dx || dy
+        ? `${transform} translate(${dx}px, ${dy}px) ${scale} translate(${-dx}px, ${-dy}px)`
+        : `${transform} ${scale}`;
 }
 
 const NO_ZOOM = [{scale: '1'}, {scale: '1'}];
@@ -1081,52 +1093,98 @@ const NO_ZOOM = [{scale: '1'}, {scale: '1'}];
 /**
  * Zoom keyframes for the slide's image that keep the slide's motion covering the panel at every moment,
  * not just at its keyframes. The browser blends rotation and zoom in straight lines, but the zoom a
- * rotation needs is a curve, so the motion is sampled finely along its length instead. The keyframes are spaced in the same eased progress as the motion's, so
- * given the same timing the two stay in step.
+ * rotation needs is a curve, so the motion is sampled finely along its length instead. The keyframes
+ * are spaced in the same eased progress as the motion's, so given the same timing the two stay in step.
  */
-function motionCoverZoom(slide, keyframes)
+function motionCoverZoom(frame, img, keyframes)
 {
-    const width = slide.offsetWidth / 2;
-    const height = slide.offsetHeight / 2;
-    if (!width || !height) return NO_ZOOM;
+    const box = measure(frame);
+    if (!box.width || !box.height) return NO_ZOOM;
 
     // Seek a paused copy of the motion and let the browser do the blending, so spins, mismatched
     // function lists and percentages all come out exactly as they will play
     const steps = 12 * (keyframes.length - 1);
-    const probe = slide.animate(keyframes, {duration: steps, fill: 'both'});
+    const probe = frame.animate(keyframes, {duration: steps, fill: 'both'});
     probe.pause();
     const needs = [];
     for (let step = 0; step <= steps; step++)
     {
         probe.currentTime = step;
-        // A frame that collapses the image can't be covered; keep the value usable rather than infinite
-        needs.push(Math.min(coverZoom(getComputedStyle(slide).transform, width, height), 100));
+        // A frame that can't be covered (collapsed, or turned away) keeps a usable value rather than infinite
+        needs.push(Math.min(coverZoom(getComputedStyle(frame).transform, box), 100));
     }
     probe.cancel();
     if (needs.every(need => need <= 1.0001)) return NO_ZOOM;
 
+    // `scale` zooms about the image's transform origin: a matching `translate` moves that to its centre
+    const [dx, dy] = fromOrigin(measure(img));
     // Between samples the zoom is blended in a straight line too, so each takes its neighbours' need as
     // well, plus a little margin for the curve between them
-    return needs.map((need, step) => ({
-        scale: (Math.max(need, needs[step - 1] ?? 1, needs[step + 1] ?? 1) * 1.005).toFixed(4),
-        offset: step / steps,
-    }));
+    return needs.map((need, step) => {
+        const zoom = Math.max(need, needs[step - 1] ?? 1, needs[step + 1] ?? 1) * 1.005;
+        const frame = {scale: zoom.toFixed(4), offset: step / steps};
+        if (dx || dy) frame.translate = `${(1 - zoom) * dx}px ${(1 - zoom) * dy}px`;
+        return frame;
+    });
+}
+
+/** An element's size and transform origin, in px from its top left. */
+function measure(el)
+{
+    const [x, y, z = 0] = getComputedStyle(el).transformOrigin.split(' ').map(parseFloat);
+    return {width: el.offsetWidth, height: el.offsetHeight, origin: [x, y, z]};
+}
+
+/** How far the box's centre is from its transform origin, ignoring a fraction of a pixel. */
+function fromOrigin({width, height, origin: [x, y]})
+{
+    const round = value => (Math.abs(value) < 0.01 ? 0 : Number(value.toFixed(2)));
+    return [round(width / 2 - x), round(height / 2 - y)];
 }
 
 /**
- * The extra zoom a transform matrix needs, applied after it, to cover the box it's on. Each corner
- * of the box (half `width` by half `height`, about its centre) maps back into the element: all must land inside it.
+ * The extra zoom, about the centre of the element's box, that its transform needs to still cover that box.
+ * Each corner of the box is traced back through the transform to the point on the element shown there:
+ * all must land inside it. A 3D or perspective transform still keeps the element flat, so on its plane
+ * (z = 0) the matrix is a 3 × 3 projective map, which is inverted to do the tracing.
  */
-function coverZoom(transform, width, height)
+function coverZoom(transform, {width, height, origin: [ox, oy, oz]})
 {
-    const inverse = new DOMMatrix(transform).inverse();
+    // The browser applies the matrix about the origin: move there, transform, and move back
+    const m = new DOMMatrix(transform);
+    const inverse = invert3([
+        m.m11, m.m21, m.m41 - oz * m.m31,
+        m.m12, m.m22, m.m42 - oz * m.m32,
+        m.m14, m.m24, m.m44 - oz * m.m34,
+    ]);
+    if (!inverse) return Infinity;
+
+    const [cx, cy] = [width / 2, height / 2];
     let zoom = 1;
-    for (const [x, y] of [[-width, -height], [width, -height], [-width, height], [width, height]])
+    for (const [x, y] of [[0, 0], [width, 0], [0, height], [width, height]])
     {
-        const point = inverse.transformPoint({x, y});
-        zoom = Math.max(zoom, Math.abs(point.x) / width, Math.abs(point.y) / height);
+        const [px, py] = [x - ox, y - oy];
+        const u = inverse[0] * px + inverse[1] * py + inverse[2];
+        const v = inverse[3] * px + inverse[4] * py + inverse[5];
+        const w = inverse[6] * px + inverse[7] * py + inverse[8];
+        // The corner would need a point behind the viewer: the element is turned away from it
+        if (!(w > 0)) return Infinity;
+        zoom = Math.max(zoom, Math.abs(u / w + ox - cx) / cx, Math.abs(v / w + oy - cy) / cy);
     }
     return Number.isNaN(zoom) ? Infinity : zoom;
+}
+
+/** The inverse of a 3 × 3 matrix, given row by row, or null if it has none. */
+function invert3([a, b, c, d, e, f, g, h, i])
+{
+    const [A, B, C] = [e * i - f * h, f * g - d * i, d * h - e * g];
+    const det = a * A + b * B + c * C;
+    if (!det || !Number.isFinite(det)) return null;
+    return [
+        A, c * h - b * i, b * f - c * e,
+        B, a * i - c * g, c * d - a * f,
+        C, b * g - a * h, a * e - b * d,
+    ].map(value => value / det);
 }
 
 /** The easing with any overshoot removed: `cubic-bezier()` and `linear()` outputs clamped to 0–1. */

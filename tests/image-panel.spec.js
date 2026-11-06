@@ -35,13 +35,38 @@ const events = page => page.evaluate(() => window.events);
 const currentIndex = panel => panel.evaluate(el => el.currentIndex);
 
 /**
+ * Asks the browser what's at each corner of the panel, just inside it, through the newest slide's motion
+ * (in `steps` even steps, or just as it stands with 0). Returns each place its image didn't cover.
+ */
+const uncovered = (panel, steps = 0) => panel.evaluate((el, steps) => {
+    const slide = el.shadowRoot.querySelector('.slide:last-child');
+    const img = slide.querySelector('img');
+    const anims = slide.getAnimations({subtree: true}).filter(a => a.id.startsWith('motion'));
+    const {left, top, right, bottom} = el.getBoundingClientRect();
+    const misses = [];
+    for (let step = 0; step <= steps; step++)
+    {
+        for (const anim of anims)
+        {
+            anim.pause();
+            anim.currentTime = anim.effect.getTiming().duration * step / (steps || 1);
+        }
+        for (const [x, y] of [[left + 2, top + 2], [right - 2, top + 2], [left + 2, bottom - 2], [right - 2, bottom - 2]])
+        {
+            if (el.shadowRoot.elementFromPoint(x, y) !== img) misses.push({step, x, y});
+        }
+    }
+    return misses;
+}, steps);
+
+/**
  * Steps through the newest slide's motion and returns how far the panel's corners fall outside the image
  * at worst, as a fraction of the panel: 0 or less means it covers throughout.
  */
 const motionShortfall = panel => panel.evaluate(el => {
     const slide = el.shadowRoot.querySelector('.slide:last-child');
     const img = slide.querySelector('img');
-    const anims = [...slide.getAnimations(), ...img.getAnimations()].filter(a => a.id.startsWith('motion'));
+    const anims = slide.getAnimations({subtree: true}).filter(a => a.id.startsWith('motion'));
     const {duration} = anims[0].effect.getTiming();
     const [w, h] = [slide.offsetWidth / 2, slide.offsetHeight / 2];
     let worst = 0;
@@ -53,7 +78,7 @@ const motionShortfall = panel => panel.evaluate(el => {
             anim.currentTime = duration * i / 200;
         }
         const scale = Number(getComputedStyle(img).scale);
-        const inverse = new DOMMatrix(getComputedStyle(slide).transform).scale(scale).inverse();
+        const inverse = new DOMMatrix(getComputedStyle(slide.querySelector('.motion')).transform).scale(scale).inverse();
         for (const [x, y] of [[-w, -h], [w, -h], [-w, h], [w, h]])
         {
             const point = inverse.transformPoint({x, y});
@@ -163,7 +188,7 @@ test.describe('slide options', () => {
         await expect(panel.locator('.slide')).toHaveCount(1);
 
         const motion = () => panel.evaluate(el => {
-            const anim = el.shadowRoot.querySelector('.slide').getAnimations().find(a => a.id === 'motion');
+            const anim = el.shadowRoot.querySelector('.motion').getAnimations().find(a => a.id === 'motion');
             const {duration, easing} = anim.effect.getTiming();
             return {duration, easing, state: anim.playState, frames: anim.effect.getKeyframes().map(k => k.transform)};
         });
@@ -179,11 +204,11 @@ test.describe('slide options', () => {
         const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
         await setConfig(panel, {motion: ['none', 'scale(1.1)'], slides: [IMAGES[0], {src: IMAGES[1], motion: false}]});
 
-        const motions = () => panel.evaluate(el => el.shadowRoot.querySelector('.slide').getAnimations().filter(a => a.id === 'motion').length);
+        const motions = () => panel.evaluate(el => el.shadowRoot.querySelector('.motion').getAnimations().filter(a => a.id === 'motion').length);
         await expect(panel.locator('.slide')).toHaveCount(1);
         expect(await motions()).toBe(1);
         // Not playing, so it stays put
-        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide').getAnimations()[0].playState)).toBe('paused');
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.motion').getAnimations()[0].playState)).toBe('paused');
 
         await panel.evaluate(el => el.next());
         await expect.poll(() => currentIndex(panel)).toBe(1);
@@ -195,7 +220,7 @@ test.describe('slide options', () => {
         await setConfig(panel, IMAGES);
         await expect(panel.locator('.slide')).toHaveCount(1);
 
-        const frames = () => panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child').getAnimations()
+        const frames = () => panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child .motion').getAnimations()
             .find(a => a.id === 'motion')?.effect.getKeyframes().map(k => k.transform) ?? null);
         const random = /^translate\(-?[\d.]+%, -?[\d.]+%\) scale\(1\.\d+\)$/;
         expect(await frames()).toEqual([expect.stringMatching(random), expect.stringMatching(random)]);
@@ -520,7 +545,7 @@ test.describe('transitions', () => {
         const result = await panel.evaluate(el => {
             const slide = el.shadowRoot.querySelectorAll('.slide')[1];
             const img = slide.querySelector('img');
-            const motion = slide.getAnimations().find(a => a.id === 'motion');
+            const motion = slide.querySelector('.motion').getAnimations().find(a => a.id === 'motion');
             const zoom = img.getAnimations().find(a => a.id === 'motion-zoom');
             return {
                 fit: getComputedStyle(img).objectFit,
@@ -599,6 +624,38 @@ test.describe('transitions', () => {
         const easing = await panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child').getAnimations()
             .find(a => a.id !== 'motion').effect.getTiming().easing);
         expect(easing).toMatch(/^linear\(0( 0%)?, 1 60%, 1 80%, 1( 100%)?\)$/);
+    });
+
+    test('fill-panel zooms about the centre, whatever the transform origin', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel transition-duration="1000"
+            style="width: 400px; height: 200px"></image-panel>`);
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], style: 'transform-origin: 0 0', transform: 'rotate(10deg)'}]);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child img').style.transform))
+            .toMatch(/^rotate\(10deg\) translate\(200px, 100px\) scale\([\d.]+\) translate\(-200px, -100px\)$/);
+        expect(await uncovered(panel)).toEqual([]);
+    });
+
+    for (const transform of ['perspective(500px) rotateY(20deg)', 'perspective(400px) rotateX(-25deg) rotateZ(5deg) translateZ(-50px)'])
+    {
+        test(`fill-panel covers with a 3D transform: ${transform}`, async ({page}) => {
+            const panel = await mount(page, `<image-panel fill-panel transition-duration="1000"
+                style="width: 400px; height: 200px"></image-panel>`);
+            await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], transform}]);
+            expect(await uncovered(panel)).toEqual([]);
+        });
+    }
+
+    test('fill-panel covers motion with moved transform origins and 3D', async ({page}) => {
+        const panel = await mount(page, `<style>image-panel::part(motion) { transform-origin: 0 0 }</style>
+            <image-panel fill-panel autoplay interval="5000" transition-duration="1000"
+            style="width: 400px; height: 200px"></image-panel>`);
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], style: 'transform-origin: 100% 0', motion: ['none', 'rotate(15deg)']}]);
+        expect((await uncovered(panel, 40)).length, 'origins').toBe(0);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child img').getAnimations()
+            .find(a => a.id === 'motion-zoom').effect.getKeyframes().at(-1).translate)).toBeTruthy();
+
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[2], motion: ['perspective(600px) rotateY(0deg)', 'perspective(600px) rotateY(25deg)']}]);
+        expect((await uncovered(panel, 40)).length, '3D').toBe(0);
     });
 
     test('without fill-panel, settings are left alone', async ({page}) => {
@@ -1104,7 +1161,7 @@ test.describe('accessibility', () => {
         const panel = await mount(page, '<image-panel autoplay></image-panel>');
         await setConfig(panel, {motion: ['scale(1)', 'scale(1.2)'], slides: IMAGES});
         await expect(panel.locator('.slide')).toHaveCount(1);
-        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide').getAnimations().length)).toBe(0);
+        expect(await panel.evaluate(el => el.shadowRoot.querySelector('.slide').getAnimations({subtree: true}).length)).toBe(0);
     });
 });
 
