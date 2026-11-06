@@ -305,11 +305,11 @@ export class ImagePanel extends HTMLElement
     get transitionDuration() { return toNumber(this.getAttribute('transition-duration')) ?? toNumber(this.#config.transitionDuration) ?? DEFAULT_TRANSITION; }
     set transitionDuration(ms) { this.setAttribute('transition-duration', ms); }
 
-    get autoplay() { return this.hasAttribute('autoplay') || !!this.#config.autoplay; }
-    set autoplay(value) { this.toggleAttribute('autoplay', !!value); }
+    get autoplay() { return this.#flag('autoplay', 'autoplay'); }
+    set autoplay(value) { this.setAttribute('autoplay', value ? '' : 'false'); }
 
-    get shuffle() { return this.hasAttribute('shuffle') || !!this.#config.shuffle; }
-    set shuffle(value) { this.toggleAttribute('shuffle', !!value); }
+    get shuffle() { return this.#flag('shuffle', 'shuffle'); }
+    set shuffle(value) { this.setAttribute('shuffle', value ? '' : 'false'); }
 
     /** Wrap round from the last slide to the first, and back. On unless set to `"false"`. */
     get loop()
@@ -334,8 +334,8 @@ export class ImagePanel extends HTMLElement
      * Keep every slide covering the whole panel: fits that leave gaps become `cover`, and image transforms,
      * motion and transition easings are adjusted so they never show the background. Takes effect from the next slide.
      */
-    get fillPanel() { return this.hasAttribute('fill-panel') || !!this.#config.fillPanel; }
-    set fillPanel(value) { this.toggleAttribute('fill-panel', !!value); }
+    get fillPanel() { return this.#flag('fill-panel', 'fillPanel'); }
+    set fillPanel(value) { this.setAttribute('fill-panel', value ? '' : 'false'); }
 
     /** Default `sizes` for slides with a srcset. Defaults to the panel's rendered width. */
     get sizes() { return this.getAttribute('sizes') ?? this.#config.sizes ?? ''; }
@@ -380,8 +380,8 @@ export class ImagePanel extends HTMLElement
      * Fill in each slide's missing `title`, `description`, `alt`, `creator` and `copyright` from its image file's
      * metadata, when the slide first loads. Takes effect from the next config.
      */
-    get metadata() { return this.hasAttribute('metadata') || !!this.#config.metadata; }
-    set metadata(value) { this.toggleAttribute('metadata', !!value); }
+    get metadata() { return this.#flag('metadata', 'metadata'); }
+    set metadata(value) { this.setAttribute('metadata', value ? '' : 'false'); }
 
     /** Enable arrow key, Home and End navigation. Makes the panel focusable. */
     get keyboard() { return this.hasAttribute('keyboard'); }
@@ -895,6 +895,16 @@ export class ImagePanel extends HTMLElement
         this.#timer = 0;
     }
 
+    /**
+     * An on/off setting that config can also turn on. The attribute wins over config either way, so
+     * `name="false"` (which the property sets when turned off) keeps it off whatever config says.
+     */
+    #flag(name, key)
+    {
+        const attr = this.getAttribute(name);
+        return attr === null ? !!this.#config[key] : attr !== 'false';
+    }
+
     /** Works out the fill-panel zoom again for the slides on screen, for the panel's current size. */
     #recover()
     {
@@ -1128,9 +1138,10 @@ function clampEasing(easing)
             const [x1, y1, x2, y2] = args.split(',').map(Number);
             return `cubic-bezier(${x1}, ${clamp(y1)}, ${x2}, ${clamp(y2)})`;
         })
+        // Each stop is an output number and up to two percentages, in either order
         .replace(/linear\(([^)]*)\)/g, (match, args) => `linear(${args
             .split(',')
-            .map(stop => stop.trim().replace(/^-?[\d.]+(?:e-?\d+)?(?=\s|$)/i, value => clamp(Number(value))))
+            .map(stop => stop.trim().split(/\s+/).map(part => (part === '' || Number.isNaN(Number(part)) ? part : clamp(Number(part)))).join(' '))
             .join(', ')})`);
 }
 

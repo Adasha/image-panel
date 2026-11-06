@@ -254,7 +254,7 @@ These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
+Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load. Setting `autoplay`, `shuffle`, `fillPanel` or `metadata` to `false` sets the attribute to `"false"`, which keeps it off even if the config turns it on, as `loop="false"` does.
 
 ### Events
 

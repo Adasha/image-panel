@@ -293,6 +293,22 @@ test.describe('navigation', () => {
         await expect(panel.locator('.slide')).toHaveCount(1);
     });
 
+    test('on/off settings turned on by config can be turned off by property', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        await setConfig(panel, {autoplay: true, shuffle: true, fillPanel: true, metadata: true, slides: IMAGES});
+        const names = ['autoplay', 'shuffle', 'fillPanel', 'metadata'];
+        const read = () => panel.evaluate((el, names) => names.map(name => el[name]), names);
+        expect(await read()).toEqual([true, true, true, true]);
+
+        await panel.evaluate((el, names) => names.forEach(name => el[name] = false), names);
+        expect(await read()).toEqual([false, false, false, false]);
+        expect(await panel.evaluate(el => el.getAttribute('fill-panel'))).toBe('false');
+
+        await panel.evaluate((el, names) => names.forEach(name => el[name] = true), names);
+        expect(await read()).toEqual([true, true, true, true]);
+        expect(await panel.evaluate(el => el.getAttribute('fill-panel'))).toBe('');
+    });
+
     test('without loop, navigation stops at either end', async ({page}) => {
         const panel = await mount(page, '<image-panel loop="false" keyboard transition-duration="0"></image-panel>');
         await setConfig(panel, IMAGES);
@@ -574,6 +590,15 @@ test.describe('transitions', () => {
         await panel.evaluate(el => el.style.height = '200px');
         await expect.poll(transform).toMatch(/^rotate\(10deg\) scale\(/);
         expect(await motionShortfall(panel)).toBeLessThanOrEqual(0);
+    });
+
+    test('fill-panel clamps linear() stops written either way round, and in exponent form', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel transition="slide" transition-duration="1000"
+            transition-easing="linear(-0.2, 60% 1.2, 1.5e+0 80%, 1)"></image-panel>`);
+        await transitionTo(panel, IMAGES);
+        const easing = await panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child').getAnimations()
+            .find(a => a.id !== 'motion').effect.getTiming().easing);
+        expect(easing).toMatch(/^linear\(0( 0%)?, 1 60%, 1 80%, 1( 100%)?\)$/);
     });
 
     test('without fill-panel, settings are left alone', async ({page}) => {
