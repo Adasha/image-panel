@@ -1,8 +1,8 @@
 # image-panel
 
-A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
+A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance.
 
-It's not trying to be a gallery. It's the viewport part of one, so it fits into slideshows, hero banners, lightboxes, kiosks and other media apps.
+It is not a gallery component, nor is it any sort of complete app. It's the viewport part of a bigger project - I've used it on websites in slideshows/carousels, in a digital picture frame and as the image renderer in AV installation projects. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
 
 - About 16 KB minified, around 6.5 KB gzipped.
 - Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
