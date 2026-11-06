@@ -34,6 +34,35 @@ function record(panel, ...types)
 const events = page => page.evaluate(() => window.events);
 const currentIndex = panel => panel.evaluate(el => el.currentIndex);
 
+/**
+ * Steps through the newest slide's motion and returns how far the panel's corners fall outside the image
+ * at worst, as a fraction of the panel: 0 or less means it covers throughout.
+ */
+const motionShortfall = panel => panel.evaluate(el => {
+    const slide = el.shadowRoot.querySelector('.slide:last-child');
+    const img = slide.querySelector('img');
+    const anims = [...slide.getAnimations(), ...img.getAnimations()].filter(a => a.id.startsWith('motion'));
+    const {duration} = anims[0].effect.getTiming();
+    const [w, h] = [slide.offsetWidth / 2, slide.offsetHeight / 2];
+    let worst = 0;
+    for (let i = 0; i <= 200; i++)
+    {
+        for (const anim of anims)
+        {
+            anim.pause();
+            anim.currentTime = duration * i / 200;
+        }
+        const scale = Number(getComputedStyle(img).scale);
+        const inverse = new DOMMatrix(getComputedStyle(slide).transform).scale(scale).inverse();
+        for (const [x, y] of [[-w, -h], [w, -h], [-w, h], [w, h]])
+        {
+            const point = inverse.transformPoint({x, y});
+            worst = Math.max(worst, Math.abs(point.x) / w - 1, Math.abs(point.y) / h - 1);
+        }
+    }
+    return worst;
+});
+
 
 test.describe('loading', () => {
     test('loads a JSON config, resolving basePath against the config URL', async ({page}) => {
@@ -476,10 +505,13 @@ test.describe('transitions', () => {
             const slide = el.shadowRoot.querySelectorAll('.slide')[1];
             const img = slide.querySelector('img');
             const motion = slide.getAnimations().find(a => a.id === 'motion');
+            const zoom = img.getAnimations().find(a => a.id === 'motion-zoom');
             return {
                 fit: getComputedStyle(img).objectFit,
                 transform: img.style.transform,
                 frames: motion.effect.getKeyframes().map(k => k.transform),
+                zooms: zoom.effect.getKeyframes().map(k => Number(k.scale)),
+                zoomEasing: zoom.effect.getTiming().easing,
                 motionEasing: motion.effect.getTiming().easing,
                 easing: slide.getAnimations().find(a => a.id !== 'motion').effect.getTiming().easing,
             };
@@ -487,15 +519,61 @@ test.describe('transitions', () => {
         expect(result.fit).toBe('cover');
         expect(result.easing).toBe('cubic-bezier(0.34, 1, 0.64, 1)');
         expect(result.motionEasing).toMatch(/^linear\(0( 0%)?, 1 60%, 1( 100%)?\)$/);
+        expect(result.zoomEasing).toBe(result.motionEasing);
 
         // Rotating a 2:1 box by 10° needs cos 10° + 2 sin 10° ≈ 1.332 to cover it
         const zoom = transform => Number(transform.match(/scale\(([\d.]+)\)$/)?.[1] ?? 1);
         expect(result.transform).toMatch(/^rotate\(10deg\) scale\(/);
         expect(zoom(result.transform)).toBeCloseTo(Math.cos(Math.PI / 18) + 2 * Math.sin(Math.PI / 18), 3);
-        // 0.8 is zoomed back up to cover. Translating after scale(1.2) pans 24% of the panel, which needs
-        // a total zoom of 1.48, since each side only has (scale - 1) / 2 to spare
-        expect(zoom(result.frames[0])).toBeCloseTo(1.25, 3);
-        expect(zoom(result.frames[1])).toBeCloseTo(1.48 / 1.2, 3);
+        // The motion itself is left as written; the image zooms instead. 0.8 is zoomed back up to cover.
+        // Translating after scale(1.2) pans 24% of the panel, which needs a total zoom of 1.48, since each
+        // side only has (scale - 1) / 2 to spare. Each has a 0.5% margin.
+        expect(result.frames[0]).toBe('scale(0.8)');
+        expect(result.frames[1]).toMatch(/^scale\(1.2\) translate\(20%(, 0(px)?)?\)$/);
+        expect(result.zooms.at(0)).toBeCloseTo(1.25 * 1.005, 3);
+        expect(result.zooms.at(-1)).toBeCloseTo(1.48 / 1.2 * 1.005, 3);
+    });
+
+    test('fill-panel covers the panel throughout a motion, not just at its keyframes', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel autoplay interval="5000" transition-duration="1000"
+            style="width: 400px; height: 200px"></image-panel>`);
+        // The zoom a rotation needs is a curve: halfway, rotate(10deg) needs ≈ 1.332, more than the
+        // average of the two ends (1 and ≈ 1.624) blended in a straight line
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], motion: ['none', 'rotate(20deg)', 'rotate(-30deg) translate(10%, 5%)']}]);
+        expect(await motionShortfall(panel)).toBeLessThanOrEqual(0);
+    });
+
+    test('fill-panel works the zoom out again when the panel changes shape', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel autoplay interval="5000" transition-duration="1000"
+            style="width: 400px; height: 200px"></image-panel>`);
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], transform: 'rotate(10deg)', motion: ['none', 'rotate(20deg)']}]);
+        const zoom = () => panel.evaluate(el => Number(el.shadowRoot.querySelector('.slide:last-child img').style.transform
+            .match(/^rotate\(10deg\) scale\(([\d.]+)\)$/)?.[1]));
+        const angle = Math.PI / 18;
+        expect(await zoom()).toBeCloseTo(Math.cos(angle) + 2 * Math.sin(angle), 3);
+
+        // A square only needs cos θ + sin θ: worked out afresh, not zoomed again on top
+        await panel.evaluate(el => el.style.height = '400px');
+        await expect.poll(zoom).toBeCloseTo(Math.cos(angle) + Math.sin(angle), 3);
+        expect(await motionShortfall(panel)).toBeLessThanOrEqual(0);
+    });
+
+    test('fill-panel covers a slide that was shown while the panel had no size', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel autoplay interval="5000" transition-duration="1000"
+            style="width: 400px; height: 200px"></image-panel>`);
+        await setConfig(panel, [IMAGES[0], {src: IMAGES[1], transform: 'rotate(10deg)', motion: ['none', 'rotate(20deg)']}]);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+        await panel.evaluate(el => {
+            el.style.height = '0';
+            el.next();
+        });
+        await expect(panel.locator('.slide')).toHaveCount(2);
+        const transform = () => panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child img').style.transform);
+        expect(await transform()).toBe('rotate(10deg)');
+
+        await panel.evaluate(el => el.style.height = '200px');
+        await expect.poll(transform).toMatch(/^rotate\(10deg\) scale\(/);
+        expect(await motionShortfall(panel)).toBeLessThanOrEqual(0);
     });
 
     test('without fill-panel, settings are left alone', async ({page}) => {

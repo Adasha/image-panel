@@ -210,7 +210,7 @@ With `fill-panel` on, every slide covers the whole panel, whatever its settings:
 ```
 
 - `fit` values that leave gaps (`contain`, `none`, `scale-down`, including from `--image-panel-fit`) become `cover`. `fill` stays as it is.
-- A slide's `transform` and each frame of its `motion` get just enough extra zoom to cover the panel. That handles zooming out, panning too far and rotating. The pan and angle are kept, so a frame is zoomed in a little more rather than moved.
+- A slide's `transform` and its `motion` get just enough extra zoom to cover the panel. That handles zooming out, panning too far and rotating. The pan and angle are kept, so the image is zoomed in a little more rather than moved. For `motion`, the zoom runs alongside it on the image and is worked out all along the motion, not just at its keyframes, so it also covers the frames in between. The zoom is worked out again whenever the panel changes size, including when a hidden or collapsed panel is shown.
 - Easings that overshoot, for `motion` and for transitions, are limited to 0–1, so slide and push stop exactly at the edge.
 
 It doesn't change `clip`, which is always deliberate, or `dip`, whose colour is the point. The first slide still transitions in over the empty panel. Like `motion`, it applies from the next slide shown.

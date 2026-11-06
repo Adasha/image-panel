@@ -159,6 +159,8 @@ export class ImagePanel extends HTMLElement
     #ownTabindex = false;
     #intersection = new IntersectionObserver(([entry]) => this.#setHold('offscreen', !entry.isIntersecting), {rootMargin: '200px'});
     #mutation = new MutationObserver(() => (!this.#source || this.#source === 'children') && this.#readChildren());
+    // Covering depends on the panel's shape, and can't be worked out at all while it has no size
+    #resize = new ResizeObserver(() => this.#recover());
 
 
     constructor()
@@ -190,6 +192,7 @@ export class ImagePanel extends HTMLElement
         this.#onVisibilityChange();
         this.#intersection.observe(this);
         this.#mutation.observe(this, {childList: true});
+        this.#resize.observe(this);
         this.#syncTabindex();
 
         if (!this.#source || this.#source === 'children')
@@ -203,6 +206,7 @@ export class ImagePanel extends HTMLElement
         document.removeEventListener('visibilitychange', this.#onVisibilityChange);
         this.#intersection.disconnect();
         this.#mutation.disconnect();
+        this.#resize.disconnect();
         this.#setHold('offscreen', true);
     }
 
@@ -713,20 +717,16 @@ export class ImagePanel extends HTMLElement
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         const duration = reduced ? 0 : this.transitionDuration;
         const motion = !reduced && normaliseMotion(this.#slides[index].motion ?? this.motion);
-        if (motion && fill)
-        {
-            motion.keyframes = motion.keyframes.map(frame => ({transform: covering(slide, frame.transform)}));
-            motion.easing = clampEasing(motion.easing);
-        }
         if (motion)
         {
             // Spans the slide's whole time on screen: fading in, the interval, and fading out
-            slide.animate(motion.keyframes, {
-                id: 'motion',
-                duration: this.interval + duration * 2,
-                easing: motion.easing,
-                fill: 'forwards',
-            });
+            const timing = {duration: this.interval + duration * 2, fill: 'forwards'};
+            // The zoom goes on the image, inside the slide's motion, so it zooms the composition without
+            // changing the pan or angle. An overshoot would carry the motion past the zoom worked out for it
+            // It's there even when no zoom is needed yet, so a resize only has to change its keyframes
+            if (fill) motion.easing = clampEasing(motion.easing);
+            slide.animate(motion.keyframes, {...timing, id: 'motion', easing: motion.easing});
+            if (fill) img.animate(motionCoverZoom(slide, motion.keyframes), {...timing, id: 'motion-zoom', easing: motion.easing});
             this.#syncMotion();
         }
         const transition = duration > 0 && parseTransition(
@@ -895,6 +895,24 @@ export class ImagePanel extends HTMLElement
         this.#timer = 0;
     }
 
+    /** Works out the fill-panel zoom again for the slides on screen, for the panel's current size. */
+    #recover()
+    {
+        if (!this.fillPanel) return;
+        for (const slide of this.#stage.children)
+        {
+            const img = slide.querySelector('img');
+            coverPanel(img);
+            const motion = slide.getAnimations().find(anim => anim.id === 'motion');
+            const zoom = img.getAnimations().find(anim => anim.id === 'motion-zoom');
+            if (motion && zoom)
+            {
+                const keyframes = motion.effect.getKeyframes().map(({transform, offset}) => ({transform, offset}));
+                zoom.effect.setKeyframes(motionCoverZoom(slide, keyframes));
+            }
+        }
+    }
+
     /** Slide motion only runs while auto-advance does, so pausing stops everything that moves. */
     #syncMotion()
     {
@@ -902,7 +920,7 @@ export class ImagePanel extends HTMLElement
         for (const anim of this.#stage.getAnimations({subtree: true}))
         {
             // Playing a finished animation would rewind it
-            if (anim.id !== 'motion' || anim.playState === 'finished') continue;
+            if (!anim.id.startsWith('motion') || anim.playState === 'finished') continue;
             if (!running) anim.pause();
             else if (anim.playState === 'paused') anim.play();
         }
@@ -1008,17 +1026,23 @@ function completeSlide(slide, metadata = {})
     slide.alt ??= slide.title ?? '';
 }
 
-/** Makes an attached image cover its box: no letterboxing, and no transform that leaves gaps. */
+const covers = new WeakMap(); // image -> its transform as set, and as last covered
+
+/**
+ * Makes an attached image cover its box: no letterboxing, and no transform that leaves gaps.
+ * Can be run again, as the box changes, without stacking zoom on zoom.
+ */
 function coverPanel(img)
 {
     if (!['cover', 'fill'].includes(getComputedStyle(img).objectFit))
     {
         img.style.objectFit = 'cover';
     }
-    if (img.style.transform)
-    {
-        img.style.transform = covering(img, img.style.transform);
-    }
+    // Start again from the transform as set, unless something else has changed it since
+    const last = covers.get(img);
+    const raw = last && img.style.transform === last.covered ? last.raw : img.style.transform;
+    if (raw) img.style.transform = covering(img, raw);
+    covers.set(img, {raw, covered: img.style.transform});
 }
 
 /**
@@ -1034,19 +1058,65 @@ function covering(el, transform)
     // Let the browser resolve percentages and units into a matrix
     const previous = el.style.transform;
     el.style.transform = transform;
-    const inverse = new DOMMatrix(getComputedStyle(el).transform).inverse();
+    const zoom = coverZoom(getComputedStyle(el).transform, width, height);
     el.style.transform = previous;
 
-    // Map each corner of the box back into the element: all must land inside it
+    // A transform that collapses the element can't be rescued
+    if (!Number.isFinite(zoom)) return 'none';
+    return zoom > 1.0001 ? `${transform} scale(${zoom.toFixed(4)})` : transform;
+}
+
+const NO_ZOOM = [{scale: '1'}, {scale: '1'}];
+
+/**
+ * Zoom keyframes for the slide's image that keep the slide's motion covering the panel at every moment,
+ * not just at its keyframes. The browser blends rotation and zoom in straight lines, but the zoom a
+ * rotation needs is a curve, so the motion is sampled finely along its length instead. The keyframes are spaced in the same eased progress as the motion's, so
+ * given the same timing the two stay in step.
+ */
+function motionCoverZoom(slide, keyframes)
+{
+    const width = slide.offsetWidth / 2;
+    const height = slide.offsetHeight / 2;
+    if (!width || !height) return NO_ZOOM;
+
+    // Seek a paused copy of the motion and let the browser do the blending, so spins, mismatched
+    // function lists and percentages all come out exactly as they will play
+    const steps = 12 * (keyframes.length - 1);
+    const probe = slide.animate(keyframes, {duration: steps, fill: 'both'});
+    probe.pause();
+    const needs = [];
+    for (let step = 0; step <= steps; step++)
+    {
+        probe.currentTime = step;
+        // A frame that collapses the image can't be covered; keep the value usable rather than infinite
+        needs.push(Math.min(coverZoom(getComputedStyle(slide).transform, width, height), 100));
+    }
+    probe.cancel();
+    if (needs.every(need => need <= 1.0001)) return NO_ZOOM;
+
+    // Between samples the zoom is blended in a straight line too, so each takes its neighbours' need as
+    // well, plus a little margin for the curve between them
+    return needs.map((need, step) => ({
+        scale: (Math.max(need, needs[step - 1] ?? 1, needs[step + 1] ?? 1) * 1.005).toFixed(4),
+        offset: step / steps,
+    }));
+}
+
+/**
+ * The extra zoom a transform matrix needs, applied after it, to cover the box it's on. Each corner
+ * of the box (half `width` by half `height`, about its centre) maps back into the element: all must land inside it.
+ */
+function coverZoom(transform, width, height)
+{
+    const inverse = new DOMMatrix(transform).inverse();
     let zoom = 1;
     for (const [x, y] of [[-width, -height], [width, -height], [-width, height], [width, height]])
     {
         const point = inverse.transformPoint({x, y});
         zoom = Math.max(zoom, Math.abs(point.x) / width, Math.abs(point.y) / height);
     }
-    // A transform that collapses the element can't be rescued
-    if (!Number.isFinite(zoom)) return 'none';
-    return zoom > 1.0001 ? `${transform} scale(${zoom.toFixed(4)})` : transform;
+    return Number.isNaN(zoom) ? Infinity : zoom;
 }
 
 /** The easing with any overshoot removed: `cubic-bezier()` and `linear()` outputs clamped to 0–1. */
