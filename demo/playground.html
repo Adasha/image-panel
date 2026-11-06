@@ -447,6 +447,7 @@
                 <label class="check"><input type="checkbox" name="metadata"> Read file metadata</label>
                 <label class="check"><input type="checkbox" name="keyboard"> Keyboard navigation</label>
                 <label class="check"><input type="checkbox" name="pauseOnHover"> Pause on hover</label>
+                <label class="check"><input type="checkbox" name="fillPanel"> Always fill the panel</label>
             </fieldset>
 
             <fieldset id="load-settings">
@@ -546,7 +547,7 @@
 
         const DEFAULTS = {
             interval: 6000, transition: 'fade', direction: '', feather: 0, dipColor: '#000000', transitionEasing: 'ease-in-out', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
-            loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, autoplay: false, startIndex: 0,
+            loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, fillPanel: false, autoplay: false, startIndex: 0,
         };
         const MOTIONS = {
             'none': 'none',
@@ -637,6 +638,7 @@
             panel.loop = settings.loop;
             panel.keyboard = settings.keyboard;
             panel.pauseOnHover = settings.pauseOnHover;
+            panel.fillPanel = settings.fillPanel;
             panel.motion = MOTIONS[settings.motion];
         }
 
@@ -673,7 +675,8 @@
             if (!img || order[panel.currentIndex] !== index) return;
 
             const slide = slides[index];
-            img.style.objectFit = slide.fit || settings.fit;
+            const fit = slide.fit || settings.fit;
+            img.style.objectFit = settings.fillPanel && fit !== 'fill' ? 'cover' : fit;
             img.style.objectPosition = slide.position || panelPosition();
             img.style.transform = [slide.transform, FLIPS[slide.flip]].filter(Boolean).join(' ');
             img.style.clipPath = slide.clip || '';
@@ -831,7 +834,7 @@
         function exportConfig()
         {
             const config = {basePath: BASE_PATH};
-            for (const key of ['autoplay', 'interval', 'transitionEasing', 'transitionDuration', 'shuffle', 'loop', 'startIndex', 'fit', 'metadata'])
+            for (const key of ['autoplay', 'interval', 'transitionEasing', 'transitionDuration', 'shuffle', 'loop', 'startIndex', 'fit', 'fillPanel', 'metadata'])
             {
                 if (settings[key] !== DEFAULTS[key]) config[key] = settings[key];
             }

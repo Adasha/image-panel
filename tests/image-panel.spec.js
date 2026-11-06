@@ -464,6 +464,51 @@ test.describe('transitions', () => {
         expect(warnings.some(text => text.includes('wobbly'))).toBe(true);
     });
 
+    test('fill-panel covers the panel: fit, image transform, motion and easing', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel fit="contain" autoplay interval="5000" transition="push"
+            transition-easing="cubic-bezier(0.34, 1.56, 0.64, 1)" transition-duration="1000" style="width: 400px; height: 200px"></image-panel>`);
+        await transitionTo(panel, [IMAGES[0], {
+            src: IMAGES[1],
+            transform: 'rotate(10deg)',
+            motion: {from: 'scale(0.8)', to: 'scale(1.2) translate(20%, 0)', easing: 'linear(0, 1.2 60%, 1)'},
+        }]);
+        const result = await panel.evaluate(el => {
+            const slide = el.shadowRoot.querySelectorAll('.slide')[1];
+            const img = slide.querySelector('img');
+            const motion = slide.getAnimations().find(a => a.id === 'motion');
+            return {
+                fit: getComputedStyle(img).objectFit,
+                transform: img.style.transform,
+                frames: motion.effect.getKeyframes().map(k => k.transform),
+                motionEasing: motion.effect.getTiming().easing,
+                easing: slide.getAnimations().find(a => a.id !== 'motion').effect.getTiming().easing,
+            };
+        });
+        expect(result.fit).toBe('cover');
+        expect(result.easing).toBe('cubic-bezier(0.34, 1, 0.64, 1)');
+        expect(result.motionEasing).toMatch(/^linear\(0( 0%)?, 1 60%, 1( 100%)?\)$/);
+
+        // Rotating a 2:1 box by 10° needs cos 10° + 2 sin 10° ≈ 1.332 to cover it
+        const zoom = transform => Number(transform.match(/scale\(([\d.]+)\)$/)?.[1] ?? 1);
+        expect(result.transform).toMatch(/^rotate\(10deg\) scale\(/);
+        expect(zoom(result.transform)).toBeCloseTo(Math.cos(Math.PI / 18) + 2 * Math.sin(Math.PI / 18), 3);
+        // 0.8 is zoomed back up to cover. Translating after scale(1.2) pans 24% of the panel, which needs
+        // a total zoom of 1.48, since each side only has (scale - 1) / 2 to spare
+        expect(zoom(result.frames[0])).toBeCloseTo(1.25, 3);
+        expect(zoom(result.frames[1])).toBeCloseTo(1.48 / 1.2, 3);
+    });
+
+    test('without fill-panel, settings are left alone', async ({page}) => {
+        const panel = await mount(page, '<image-panel fit="contain" transition="slide" transition-easing="cubic-bezier(0.34, 1.56, 0.64, 1)" transition-duration="1000"></image-panel>');
+        await transitionTo(panel, [IMAGES[0], {src: IMAGES[1], transform: 'rotate(10deg)'}]);
+        const result = await panel.evaluate(el => {
+            const slide = el.shadowRoot.querySelectorAll('.slide')[1];
+            const img = slide.querySelector('img');
+            return [getComputedStyle(img).objectFit, img.style.transform, slide.getAnimations()[0].effect.getTiming().easing];
+        });
+        expect(result).toEqual(['contain', 'rotate(10deg)', 'cubic-bezier(0.34, 1.56, 0.64, 1)']);
+    });
+
     test('push ignores diagonal directions', async ({page}) => {
         const panel = await mount(page, '<image-panel transition="push up-left" transition-duration="1000"></image-panel>');
         expect((await transitionTo(panel, IMAGES)).incoming).toEqual(['100 0', '0 0']);

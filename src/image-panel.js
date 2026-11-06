@@ -45,7 +45,7 @@ const KEYS = {
 
 const UPGRADABLE = [
     'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
-    'startIndex', 'fit', 'position', 'sizes', 'motion', 'transition', 'transitionEasing', 'keyboard', 'pauseOnHover',
+    'startIndex', 'fit', 'position', 'sizes', 'fillPanel', 'motion', 'transition', 'transitionEasing', 'keyboard', 'pauseOnHover',
 ];
 
 const template = document.createElement('template');
@@ -325,6 +325,13 @@ export class ImagePanel extends HTMLElement
     /** Default object-position for slides. */
     get position() { return this.getAttribute('position') ?? this.#config.position ?? ''; }
     set position(value) { this.setAttribute('position', value); }
+
+    /**
+     * Keep every slide covering the whole panel: fits that leave gaps become `cover`, and image transforms,
+     * motion and transition easings are adjusted so they never show the background. Takes effect from the next slide.
+     */
+    get fillPanel() { return this.hasAttribute('fill-panel') || !!this.#config.fillPanel; }
+    set fillPanel(value) { this.toggleAttribute('fill-panel', !!value); }
 
     /** Default `sizes` for slides with a srcset. Defaults to the panel's rendered width. */
     get sizes() { return this.getAttribute('sizes') ?? this.#config.sizes ?? ''; }
@@ -688,6 +695,11 @@ export class ImagePanel extends HTMLElement
             outgoing.previousElementSibling.remove();
         }
         this.#stage.append(slide);
+        const fill = this.fillPanel;
+        if (fill)
+        {
+            coverPanel(img);
+        }
 
         const previousIndex = this.#index;
         this.#index = index;
@@ -701,6 +713,11 @@ export class ImagePanel extends HTMLElement
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         const duration = reduced ? 0 : this.transitionDuration;
         const motion = !reduced && normaliseMotion(this.#slides[index].motion ?? this.motion);
+        if (motion && fill)
+        {
+            motion.keyframes = motion.keyframes.map(frame => ({transform: covering(slide, frame.transform)}));
+            motion.easing = clampEasing(motion.easing);
+        }
         if (motion)
         {
             // Spans the slide's whole time on screen: fading in, the interval, and fading out
@@ -719,6 +736,8 @@ export class ImagePanel extends HTMLElement
         if (transition)
         {
             transition.easing = validEasing(ownOr(this.#slides[index].transitionEasing, this.transitionEasing));
+            // An overshoot would carry slide and push past their ends, opening a gap at the edge
+            if (fill) transition.easing = clampEasing(transition.easing);
         }
         slide.classList.toggle('blend', transition?.type === 'fade');
         if (transition)
@@ -987,6 +1006,62 @@ function completeSlide(slide, metadata = {})
         slide[field] ??= value;
     }
     slide.alt ??= slide.title ?? '';
+}
+
+/** Makes an attached image cover its box: no letterboxing, and no transform that leaves gaps. */
+function coverPanel(img)
+{
+    if (!['cover', 'fill'].includes(getComputedStyle(img).objectFit))
+    {
+        img.style.objectFit = 'cover';
+    }
+    if (img.style.transform)
+    {
+        img.style.transform = covering(img, img.style.transform);
+    }
+}
+
+/**
+ * The transform, with extra zoom if needed so the attached element, transformed about its centre, still covers
+ * its own untransformed box. Zooming in on top of any pan or rotation keeps the composition, just closer.
+ */
+function covering(el, transform)
+{
+    const width = el.offsetWidth / 2;
+    const height = el.offsetHeight / 2;
+    if (!width || !height || !transform || transform === 'none') return transform;
+
+    // Let the browser resolve percentages and units into a matrix
+    const previous = el.style.transform;
+    el.style.transform = transform;
+    const inverse = new DOMMatrix(getComputedStyle(el).transform).inverse();
+    el.style.transform = previous;
+
+    // Map each corner of the box back into the element: all must land inside it
+    let zoom = 1;
+    for (const [x, y] of [[-width, -height], [width, -height], [-width, height], [width, height]])
+    {
+        const point = inverse.transformPoint({x, y});
+        zoom = Math.max(zoom, Math.abs(point.x) / width, Math.abs(point.y) / height);
+    }
+    // A transform that collapses the element can't be rescued
+    if (!Number.isFinite(zoom)) return 'none';
+    return zoom > 1.0001 ? `${transform} scale(${zoom.toFixed(4)})` : transform;
+}
+
+/** The easing with any overshoot removed: `cubic-bezier()` and `linear()` outputs clamped to 0–1. */
+function clampEasing(easing)
+{
+    const clamp = value => Math.min(1, Math.max(0, value));
+    return easing
+        .replace(/cubic-bezier\(([^)]*)\)/g, (match, args) => {
+            const [x1, y1, x2, y2] = args.split(',').map(Number);
+            return `cubic-bezier(${x1}, ${clamp(y1)}, ${x2}, ${clamp(y2)})`;
+        })
+        .replace(/linear\(([^)]*)\)/g, (match, args) => `linear(${args
+            .split(',')
+            .map(stop => stop.trim().replace(/^-?[\d.]+(?:e-?\d+)?(?=\s|$)/i, value => clamp(Number(value))))
+            .join(', ')})`);
 }
 
 /** A slide's own setting, unless it's left empty. */

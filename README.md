@@ -103,6 +103,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `fit` | `fit` | `cover` | Default `object-fit` for slides. |
 | `position` | `position` | `center` | Default `object-position` for slides. |
 | `sizes` | `sizes` | panel width | Default `sizes` for slides with a `srcset`. |
+| `fillPanel` | `fill-panel` | off | Never show the panel background behind a slide. See [Filling the panel](#filling-the-panel). |
 | `metadata` | `metadata` | off | Fill in missing slide fields from each image's [metadata](#metadata). |
 | `motion` | `motion` | none | Default [motion](#motion) for slides without their own: `"random"`, `"none"`, or a motion spec (config and JS only). |
 | | `keyboard` | off | Arrow keys, Home and End navigate. Makes the panel focusable. |
@@ -157,7 +158,7 @@ A wipe's feather is any CSS length, in either order with the direction. A bare n
 
 - A slide's own `transition` decides how it comes in, overriding the panel's. Like `motion`, changes take effect from the next slide.
 - `transitionDuration` sets the length of every type, and `0` makes them all cuts.
-- `transitionEasing` sets how wipe, slide and push move: any CSS easing function, such as `ease-out`, `linear` or `cubic-bezier(0.16, 1, 0.3, 1)`. The default is `ease-in-out`. Fade stays linear and dip eases in and out of its colour, since a different curve there just changes how long each image is visible. An easing that overshoots (a `cubic-bezier` with y values outside 0–1) briefly shows the panel background at the edge on slide and push.
+- `transitionEasing` sets how wipe, slide and push move: any CSS easing function, such as `ease-out`, `linear` or `cubic-bezier(0.16, 1, 0.3, 1)`. The default is `ease-in-out`. Fade stays linear and dip eases in and out of its colour, since a different curve there just changes how long each image is visible. An easing that overshoots (a `cubic-bezier` with y values outside 0–1) briefly shows the panel background at the edge on slide and push, unless `fill-panel` is on.
 - `slide` and `wipe` don't move the old slide, so with `fit: contain` it shows round the edges of the new one until the transition ends. `push`, `fade` and `dip` don't have this issue.
 - Each slide clips its image to the panel's box, so rotated or offset images (`transform`) move in with straight edges.
 - Wipes mask the slide wrapper, so if the slide also has `motion`, the edge sweeps across the moving image and takes slightly less than the full duration to cross the visible part of the panel.
@@ -196,9 +197,23 @@ panel.motion = 'random';                               // strings are reflected 
 Changing it affects the next slide shown, not the current one. Set `panel.motion = null` to fall back to the config.
 
 - The transforms apply to the slide wrapper (`::part(slide)`), in panel coordinates, so they combine with the image's own `transform` and `flip` rather than replacing them. Translating by a percentage moves by that much of the panel.
-- Zoom in rather than out (scale ≥ 1 throughout), or the panel background shows at the edges.
+- Zoom in rather than out (scale ≥ 1 throughout), or the panel background shows at the edges. [`fill-panel`](#filling-the-panel) does this for you.
 - Motion only runs while the panel is playing: it freezes with `pause()` and whenever auto-advance is held (focus, hover, hidden or offscreen), and it holds on its last frame if the slide outlives it. Without `autoplay`, slides stay still.
 - It's turned off entirely when the user prefers reduced motion.
+
+### Filling the panel
+
+With `fill-panel` on, every slide covers the whole panel, whatever its settings:
+
+```html
+<image-panel src="slideshow.json" fill-panel></image-panel>
+```
+
+- `fit` values that leave gaps (`contain`, `none`, `scale-down`, including from `--image-panel-fit`) become `cover`. `fill` stays as it is.
+- A slide's `transform` and each frame of its `motion` get just enough extra zoom to cover the panel. That handles zooming out, panning too far and rotating. The pan and angle are kept, so a frame is zoomed in a little more rather than moved.
+- Easings that overshoot, for `motion` and for transitions, are limited to 0–1, so slide and push stop exactly at the edge.
+
+It doesn't change `clip`, which is always deliberate, or `dip`, whose colour is the point. The first slide still transitions in over the empty panel. Like `motion`, it applies from the next slide shown.
 
 ### Metadata
 
@@ -239,7 +254,7 @@ These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
+Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load.
 
 ### Events
 
