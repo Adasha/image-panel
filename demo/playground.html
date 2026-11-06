@@ -538,7 +538,9 @@
     </div>
 
     <script type="module">
-        import '../dist/image-panel.esm.js';
+        // From src rather than dist, so the preview below shares the panel's own copy of the fill-panel code
+        import '../src/image-panel.js';
+        import {coverPanel} from '../src/cover.js';
 
         const $ = id => document.getElementById(id);
         const panel = $('panel');
@@ -675,11 +677,12 @@
             if (!img || order[panel.currentIndex] !== index) return;
 
             const slide = slides[index];
-            const fit = slide.fit || settings.fit;
-            img.style.objectFit = settings.fillPanel && fit !== 'fill' ? 'cover' : fit;
+            img.style.objectFit = slide.fit || settings.fit;
             img.style.objectPosition = slide.position || panelPosition();
             img.style.transform = [slide.transform, FLIPS[slide.flip]].filter(Boolean).join(' ');
             img.style.clipPath = slide.clip || '';
+            // The same cover fit and zoom the panel gives its slides
+            if (panel.fillPanel) coverPanel(img);
         }
 
 

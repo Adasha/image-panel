@@ -66,6 +66,22 @@ test('slide overrides apply to the slide on screen and appear in the code', asyn
     await expect(image(page)).toHaveCSS('transform', 'none');
 });
 
+test('with fill-panel on, the live preview zooms a transform to cover, as the panel does', async ({page}) => {
+    await page.locator('#toggle').click();
+    await page.locator('input[name="fillPanel"]').check();
+    // Typing previews straight away; the panel itself only reloads the slide on change
+    await page.locator('#slide-transform').fill('rotate(10deg)');
+    const transform = () => image(page).evaluate(img => img.style.transform);
+    await expect.poll(transform).toMatch(/^rotate\(10deg\) scale\(1\.\d+\)$/);
+
+    // Each keystroke starts again from what's typed, rather than zooming the last preview again
+    await page.locator('#slide-transform').fill('rotate(5deg)');
+    const zoom = Number((await transform()).match(/scale\(([\d.]+)\)/)?.[1]);
+    const {width, height} = await page.locator('#panel').boundingBox();
+    const angle = Math.PI / 36;
+    expect(zoom).toBeCloseTo(Math.cos(angle) + Math.max(width / height, height / width) * Math.sin(angle), 2);
+});
+
 test('transport buttons drive the panel', async ({page}) => {
     await page.locator('#prev').click();
     await expect(page.locator('#osd-counter')).toHaveText('5 / 5');
