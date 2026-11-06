@@ -758,6 +758,9 @@ export class ImagePanel extends HTMLElement
         {
             slide.previousElementSibling.remove();
         }
+        // Only needed while fading. Left on, it costs a blending layer, and in Firefox a flipped image
+        // in a panel with rounded corners then loses parts of itself while the page scrolls
+        slide.classList.remove('blend');
 
         // A later slide (or new config) took over before this one finished
         if (this.#stage.lastElementChild !== slide) return;

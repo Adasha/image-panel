@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Flip scroll test (temporary)</title>
+    <style>
+        body {
+            font-family: system-ui, sans-serif;
+            max-width: 700px;
+            margin: 0 auto;
+            padding: 0 1rem 100vh;
+        }
+        /* A full window of space before every panel, so each can scroll off the bottom as well as the top */
+        section {
+            padding-top: 100vh;
+        }
+        image-panel {
+            aspect-ratio: 16 / 9;
+            height: auto;
+            background: #111;
+        }
+    </style>
+</head>
+<body>
+    <h1>Flip scroll test</h1>
+    <p>Scroll slowly so each panel goes partly off the top, then off the bottom, of the window. Note which letters show black.</p>
+    <div id="panels"></div>
+
+    <script src="../dist/image-panel.js"></script>
+    <script>
+        // Each variant: label, whether the slide fades in, rounded corners, flipped, and CSS put inside the component
+        const VARIANTS = {
+            A: ['Like the demo: fades in, rounded corners (should glitch)', true, true, true, ''],
+            B: ['Fades in, square corners', true, false, true, ''],
+            C: ['No fade, rounded corners', false, true, true, ''],
+            D: ['Fades in, rounded corners, blend mode cleared afterwards', true, true, true, '.slide.blend { mix-blend-mode: normal; }'],
+            E: ['Fades in, rounded corners, not flipped (control)', true, true, false, ''],
+        };
+        const container = document.getElementById('panels');
+        for (const [letter, [label, fade, rounded, flipped, css]] of Object.entries(VARIANTS))
+        {
+            const section = document.createElement('section');
+            section.innerHTML = `<h2>${letter}: ${label}</h2>
+                <image-panel transition-duration="${fade ? 400 : 0}" aria-label="${label}" style="border-radius: ${rounded ? 6 : 0}px">
+                    <img src="images/BigPit-ChainMacro.jpg" alt="Chain links" ${flipped ? 'data-flip="vertical"' : ''}>
+                </image-panel>`;
+            container.append(section);
+            const panel = section.querySelector('image-panel');
+            const sheet = new CSSStyleSheet();
+            sheet.replaceSync(css);
+            panel.shadowRoot.adoptedStyleSheets = [...panel.shadowRoot.adoptedStyleSheets, sheet];
+        }
+    </script>
+</body>
+</html>

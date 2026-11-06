@@ -420,6 +420,9 @@ test.describe('transitions', () => {
         const panel = await mount(page, '<image-panel transition-duration="1000"></image-panel>');
         const result = await transitionTo(panel, IMAGES);
         expect(result).toMatchObject({incoming: ['0', '1'], outgoing: ['1', '0'], blend: true});
+        // The blend is only for the fade itself
+        await expect(panel.locator('.slide')).toHaveCount(1);
+        await expect(panel.locator('.slide')).not.toHaveClass(/blend/);
     });
 
     test('dip fades through a colour, swapping slides halfway', async ({page}) => {
