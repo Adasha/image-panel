@@ -84,7 +84,7 @@ No new features. 1.0 means the API is settled and breaking changes then need 2.0
 - Decide on [video slides](#video-slides) enough to know whether any field (such as a slide `type`) needs reserving now.
 - State supported browsers in the README, and test them in CI.
 - Check size: say what the budget is, and add a CI check against it.
-- Publish to npm, if wanted.
+- Publish to npm, as every release is from 0.8.0 on.
 
 ---
 
