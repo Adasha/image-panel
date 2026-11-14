@@ -1,0 +1,124 @@
+import {test, expect} from '@playwright/test';
+
+const image = page => page.locator('#panel [part~="slide"]:last-child [part~="image"]');
+const osdValue = (page, field) => page.locator(`#osd-fields dt:text-is("${field}") + .source + dd`);
+const osdSource = (page, field) => page.locator(`#osd-fields dt:text-is("${field}") + .source`);
+
+let errors;
+
+test.beforeEach(async ({page}) => {
+    errors = [];
+    page.on('pageerror', error => errors.push(error));
+    page.on('console', message => message.type() === 'error' && errors.push(message.text()));
+    await page.goto('/demo/playground.html');
+    await expect(page.locator('#osd-counter')).toHaveText('1 / 5');
+});
+
+test.afterEach(async () => {
+    expect(errors).toEqual([]);
+});
+
+test('shows the current slide in the overlay, with where each field came from', async ({page}) => {
+    await expect(osdValue(page, 'title')).toHaveText('Boat stall in Hạ Long Bay');
+    await expect(osdSource(page, 'title')).toHaveText('json');
+    await expect(page.locator('#osd-file')).toHaveText('HaLongBay-Woman-in-shop-boat.jpg');
+
+    await page.locator('#show-osd').uncheck();
+    await expect(page.locator('#osd')).toBeHidden();
+});
+
+test('marks fields read from the file, and drops them when metadata is off', async ({page}) => {
+    await page.locator('#next').click();
+    await expect(page.locator('#osd-counter')).toHaveText('2 / 5');
+    // The second slide's JSON has no title, so any title came from the file
+    const title = osdSource(page, 'title');
+    await expect(title).toHaveText('file');
+
+    await page.getByLabel('Read file metadata').uncheck();
+    await expect(page.locator('#osd-counter')).toHaveText('2 / 5');
+    await expect(title).toHaveText('—');
+});
+
+test('panel settings update the panel live', async ({page}) => {
+    await page.locator('#fit').selectOption('contain');
+    await expect(image(page)).toHaveCSS('object-fit', 'contain');
+    await expect(page.locator('#panel')).toHaveAttribute('fit', 'contain');
+
+    await page.locator('#interval').fill('3000');
+    await expect(page.locator('#panel')).toHaveAttribute('interval', '3000');
+    await expect(page.locator('output[for="interval"]')).toHaveText('3.0s');
+
+    await page.getByLabel('Pause on hover').check();
+    await expect(page.locator('#panel')).toHaveAttribute('pause-on-hover');
+    await expect(page.locator('#code')).toContainText('pause-on-hover');
+});
+
+test('slide overrides apply to the slide on screen and appear in the code', async ({page}) => {
+    await page.locator('#toggle').click();
+    await expect(page.locator('#toggle')).toHaveText('Play');
+
+    await page.locator('#slide-flip').selectOption('horizontal');
+    await expect(image(page)).toHaveCSS('transform', 'matrix(-1, 0, 0, 1, 0, 0)');
+    await expect(page.locator('#osd-counter')).toHaveText('1 / 5');
+    await expect(page.locator('#code')).toContainText('"flip": "horizontal"');
+
+    await page.locator('#reset-slide').click();
+    await expect(image(page)).toHaveCSS('transform', 'none');
+});
+
+test('with fill-panel on, the live preview zooms a transform to cover, as the panel does', async ({page}) => {
+    await page.locator('#toggle').click();
+    await page.locator('input[name="fillPanel"]').check();
+    // Typing previews straight away; the panel itself only reloads the slide on change
+    await page.locator('#slide-transform').fill('rotate(10deg)');
+    const transform = () => image(page).evaluate(img => img.style.transform);
+    await expect.poll(transform).toMatch(/^rotate\(10deg\) scale\(1\.\d+\)$/);
+
+    // Each keystroke starts again from what's typed, rather than zooming the last preview again
+    await page.locator('#slide-transform').fill('rotate(5deg)');
+    const zoom = Number((await transform()).match(/scale\(([\d.]+)\)/)?.[1]);
+    const {width, height} = await page.locator('#panel').boundingBox();
+    const angle = Math.PI / 36;
+    expect(zoom).toBeCloseTo(Math.cos(angle) + Math.max(width / height, height / width) * Math.sin(angle), 2);
+});
+
+test('transport buttons drive the panel', async ({page}) => {
+    await page.locator('#prev').click();
+    await expect(page.locator('#osd-counter')).toHaveText('5 / 5');
+    await expect(page.locator('#announcer')).toContainText('Slide 5 of 5');
+    await expect(page.locator('#log li').first()).toContainText('api');
+});
+
+test('transition controls set the panel transition and show only the options that apply', async ({page}) => {
+    const panel = page.locator('#panel');
+    await expect(page.getByLabel('Direction')).toBeHidden();
+    await expect(page.getByLabel('Dip colour')).toBeHidden();
+
+    await page.locator('#transition').selectOption('push');
+    await page.getByLabel('Direction').selectOption('cardinal');
+    await expect(panel).toHaveAttribute('transition', 'push cardinal');
+    await expect(page.locator('#code')).toContainText('"transition": "push cardinal"');
+
+    // Diagonals are only offered for wipe and slide, and switching to push drops one
+    await expect(page.locator('#direction option[value="up-left"]')).toBeDisabled();
+    await page.locator('#transition').selectOption('slide');
+    await page.getByLabel('Direction').selectOption('diagonal');
+    await page.locator('#transition').selectOption('push');
+    await expect(panel).toHaveAttribute('transition', 'push');
+    await page.locator('#transition').selectOption('slide');
+    await page.getByLabel('Direction').selectOption('diagonal');
+
+    await expect(page.getByLabel('Feather')).toBeHidden();
+    await page.locator('#transition').selectOption('wipe');
+    await page.getByLabel('Feather').fill('20');
+    await page.locator('#transitionEasing').selectOption('ease-out');
+    await expect(panel).toHaveAttribute('transition-easing', 'ease-out');
+    await expect(page.locator('#code')).toContainText('"transitionEasing": "ease-out"');
+    await expect(panel).toHaveAttribute('transition', 'wipe diagonal 20%');
+
+    await page.locator('#transition').selectOption('dip');
+    await expect(page.getByLabel('Direction')).toBeHidden();
+    await expect(page.locator('#transitionEasing')).toBeHidden();
+    await page.getByLabel('Dip colour').fill('#ffffff');
+    await expect(panel).toHaveAttribute('transition', 'dip #ffffff');
+});

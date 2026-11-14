@@ -1,0 +1,8 @@
+{
+	"basePath": "../demo/images/",
+	"slides": [
+		{"src": "Markermeer.jpg", "title": "Markermeer"},
+		{"src": "BigPit-ChainMacro.jpg", "alt": "Rusty chains"},
+		"holocaust_memorial.jpg"
+	]
+}
