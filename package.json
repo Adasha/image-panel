@@ -1,6 +1,6 @@
 {
   "name": "image-panel",
-  "version": "0.4.0",
+  "version": "0.8.0",
   "description": "A small, configurable image viewer web component.",
   "keywords": [
     "web-component",
@@ -25,7 +25,9 @@
   "scripts": {
     "build": "node scripts/build.js",
     "start": "node scripts/build.js --serve",
-    "test": "playwright test"
+    "test": "playwright test",
+    "preversion": "npm run build && npm test",
+    "version": "node scripts/changelog.js && git add CHANGELOG.md"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",

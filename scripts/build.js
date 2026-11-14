@@ -1,8 +1,11 @@
 import * as esbuild from 'esbuild';
+import {readFileSync} from 'node:fs';
 
 const serve = process.argv.includes('--serve');
+const {version} = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
 
 const common = {
+    banner: {js: `/*! image-panel v${version} | MPL-2.0 */`},
     entryPoints: ['src/image-panel.js'],
     bundle: true,
     minify: true,

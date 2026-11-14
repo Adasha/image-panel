@@ -4,7 +4,13 @@ A small, dependency-free image viewer web component. It shows one image at a tim
 
 It is not a gallery component, nor is it any sort of complete app. It's the viewport part of a bigger project - I've used it on websites in slideshows/carousels, in a digital picture frame and as the image renderer in AV installation projects. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
 
-- About 16 KB minified, around 6.5 KB gzipped.
+As far as image viewers go, this has a lot of cool features:
+
+- Albums configured from nested HTML, JavaScript or JSON.
+- Apply transforms to images - flip them, apply CSS etc. Add pans and zooms to images.
+- Multiple configurable transitions, including dissolve, wipes, pushes and others. Transitions have per-effect customisations, including duration, feather-edge (for wipes) and easing.
+- Built-in pulling of image metadata for use in titles and captions.
+- About 23 KB minified, around 9 KB gzipped.
 - Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
 - Careful with resources:
   - Nothing loads until the panel is near the viewport.
@@ -357,6 +363,19 @@ npm run build      # build dist/
 npx playwright install chromium firefox   # once
 npm test
 ```
+
+### Versions and releases
+
+Versions follow [semver](https://semver.org/). Until 1.0, a minor version may break things, and the [changelog](CHANGELOG.md) says how to migrate. Planned work is in the [roadmap](ROADMAP.md).
+
+Record every user-facing change under `## [Unreleased]` in [CHANGELOG.md](CHANGELOG.md) as you make it. To release:
+
+```sh
+npm version minor   # or patch / major / an exact version, e.g. 0.9.0
+git push --follow-tags
+```
+
+`npm version` builds and runs the tests first. It then bumps `package.json`, turns the Unreleased notes into a dated section, commits, and tags `vX.Y.Z`. It refuses if the Unreleased section is empty. The built files carry the version in a banner comment.
 
 ## Licence
 
