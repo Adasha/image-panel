@@ -373,9 +373,10 @@ Record every user-facing change under `## [Unreleased]` in [CHANGELOG.md](CHANGE
 ```sh
 npm version minor   # or patch / major / an exact version, e.g. 0.9.0
 git push --follow-tags
+npm publish
 ```
 
-`npm version` builds and runs the tests first. It then bumps `package.json`, turns the Unreleased notes into a dated section, commits, and tags `vX.Y.Z`. It refuses if the Unreleased section is empty. The built files carry the version in a banner comment.
+`npm version` builds and runs the tests first. It then bumps `package.json`, turns the Unreleased notes into a dated section, commits, and tags `vX.Y.Z`. It refuses if the Unreleased section is empty. The built files carry the version in a banner comment. Every release goes to npm.
 
 ## Licence
 
