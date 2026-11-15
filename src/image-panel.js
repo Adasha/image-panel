@@ -44,9 +44,16 @@ const KEYS = {
     End: panel => ({index: panel.length - 1}),
 };
 
+// A press becomes a drag once it moves this far, and a drag becomes a swipe once it travels SWIPE_DISTANCE
+// (or a quarter of the panel's width, if that's less), or is flicked at SWIPE_SPEED over its last SWIPE_WINDOW
+const SWIPE_SLOP = 10;
+const SWIPE_DISTANCE = 50;
+const SWIPE_SPEED = 0.4;    // px per ms
+const SWIPE_WINDOW = 100;   // ms
+
 const UPGRADABLE = [
     'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
-    'startIndex', 'fit', 'position', 'sizes', 'fillPanel', 'motion', 'transition', 'transitionEasing', 'keyboard', 'pauseOnHover',
+    'startIndex', 'fit', 'position', 'sizes', 'fillPanel', 'motion', 'transition', 'transitionEasing', 'keyboard', 'swipe', 'pauseOnHover',
 ];
 
 const template = document.createElement('template');
@@ -61,6 +68,12 @@ template.innerHTML = `
     }
     :host([hidden]) {
         display: none;
+    }
+    :host([swipe]) {
+        /* Horizontal drags are the panel's; vertical ones still scroll the page, and pinches still zoom it */
+        touch-action: pan-y pinch-zoom;
+        -webkit-user-select: none;
+        user-select: none;
     }
     .slides, .slide, .motion, img {
         position: absolute;
@@ -102,7 +115,7 @@ template.innerHTML = `
  * Minimal, configurable image viewer.
  *
  * Every event's detail has a `trigger` saying what caused it:
- * 'start' | 'auto' | 'keyboard' | 'api', or for hold/resume 'focus' | 'hover' | 'hidden' | 'offscreen'.
+ * 'start' | 'auto' | 'keyboard' | 'swipe' | 'api', or for hold/resume 'focus' | 'hover' | 'swipe' | 'hidden' | 'offscreen'.
  *
  * @fires configloadstart - Fetching the `src` JSON. detail: { url }
  * @fires ready           - Slides are known and about to start showing. detail: { length }
@@ -131,7 +144,7 @@ template.innerHTML = `
  */
 export class ImagePanel extends HTMLElement
 {
-    static observedAttributes = ['src', 'interval', 'keyboard'];
+    static observedAttributes = ['src', 'interval', 'keyboard', 'swipe'];
 
     #internals = this.attachInternals();
     #root = this.attachShadow({mode: 'open'});
@@ -158,6 +171,8 @@ export class ImagePanel extends HTMLElement
     #timerStart = 0;
     #remaining = null;
 
+    #drag = null;           // the pointer pressed on a swipe panel: {id, x, y, moves, dragging}
+
     #ownTabindex = false;
     #intersection = new IntersectionObserver(([entry]) => this.#setHold('offscreen', !entry.isIntersecting), {rootMargin: '200px'});
     #mutation = new MutationObserver(() => (!this.#source || this.#source === 'children') && this.#readChildren());
@@ -181,6 +196,9 @@ export class ImagePanel extends HTMLElement
         this.addEventListener('focusout', () => this.#setHold('focus', false));
         this.addEventListener('pointerenter', () => this.pauseOnHover && this.#setHold('hover', true));
         this.addEventListener('pointerleave', () => this.#setHold('hover', false));
+        this.addEventListener('pointerdown', this.#onPointerdown);
+        // Dragging the image itself would start a native drag and drop instead of a swipe
+        this.addEventListener('dragstart', event => this.swipe && event.preventDefault());
     }
 
     connectedCallback()
@@ -210,6 +228,7 @@ export class ImagePanel extends HTMLElement
         this.#mutation.disconnect();
         this.#resize.disconnect();
         this.#setHold('offscreen', true);
+        this.#endSwipe();
     }
 
     attributeChangedCallback(name, oldValue, newValue)
@@ -242,6 +261,10 @@ export class ImagePanel extends HTMLElement
 
             case 'keyboard':
                 this.#syncTabindex();
+                break;
+
+            case 'swipe':
+                if (newValue === null) this.#endSwipe();
                 break;
         }
     }
@@ -388,6 +411,13 @@ export class ImagePanel extends HTMLElement
     /** Enable arrow key, Home and End navigation. Makes the panel focusable. */
     get keyboard() { return this.hasAttribute('keyboard'); }
     set keyboard(value) { this.toggleAttribute('keyboard', !!value); }
+
+    /**
+     * Enable navigation by dragging horizontally with touch, pen or mouse, mirrored in right-to-left layouts.
+     * Vertical drags still scroll the page.
+     */
+    get swipe() { return this.hasAttribute('swipe'); }
+    set swipe(value) { this.toggleAttribute('swipe', !!value); }
 
     get pauseOnHover() { return this.hasAttribute('pause-on-hover'); }
     set pauseOnHover(value) { this.toggleAttribute('pause-on-hover', !!value); }
@@ -985,6 +1015,97 @@ export class ImagePanel extends HTMLElement
         step ? this.#step(step, 'keyboard') : this.#goTo(index, 'keyboard');
     };
 
+    #onPointerdown = event =>
+    {
+        if (this.#drag)
+        {
+            // A second finger is a pinch, not a swipe
+            if (event.pointerId !== this.#drag.id) this.#endSwipe();
+            return;
+        }
+        if (!this.swipe || !event.isPrimary || event.button !== 0) return;
+
+        this.#drag = {id: event.pointerId, x: event.clientX, y: event.clientY, moves: [{t: event.timeStamp, x: event.clientX}], dragging: false};
+        // Keeps the drag going if a mouse leaves the panel. Touch and pen are captured already
+        try { this.setPointerCapture(event.pointerId); } catch {}
+        this.addEventListener('pointermove', this.#onPointermove);
+        this.addEventListener('pointerup', this.#onPointerup);
+        this.addEventListener('pointercancel', this.#onPointercancel);
+        this.addEventListener('lostpointercapture', this.#onPointercancel);
+    };
+
+    #onPointermove = event =>
+    {
+        const drag = this.#drag;
+        if (event.pointerId !== drag.id) return;
+
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        if (!drag.dragging)
+        {
+            if (Math.hypot(dx, dy) < SWIPE_SLOP) return;
+            // Mostly vertical: it's the page's. A touch then scrolls it, and the browser cancels the pointer
+            if (Math.abs(dy) > Math.abs(dx))
+            {
+                this.#endSwipe();
+                return;
+            }
+            drag.dragging = true;
+            this.#setHold('swipe', true);
+        }
+        trackMove(drag.moves, event);
+    };
+
+    #onPointerup = event =>
+    {
+        const drag = this.#drag;
+        if (event.pointerId !== drag.id) return;
+        if (!drag.dragging)
+        {
+            this.#endSwipe();
+            return;
+        }
+
+        // The click that ends a drag isn't a click on the panel
+        suppressClick(this);
+
+        const moves = trackMove(drag.moves, event);
+        const dx = event.clientX - drag.x;
+        const dy = event.clientY - drag.y;
+        // Over at least a frame, so moves that arrive together don't make a slow drag look fast
+        const speed = (moves.at(-1).x - moves[0].x) / Math.max(moves.at(-1).t - moves[0].t, 16);
+
+        // A flick decides on its own, so flicking back cancels a long drag. Otherwise it's how far the drag went
+        const swiped = Math.abs(dx) > Math.abs(dy) && (Math.abs(speed) >= SWIPE_SPEED
+            ? Math.sign(speed) === Math.sign(dx)
+            : Math.abs(dx) >= Math.min(SWIPE_DISTANCE, this.clientWidth / 4));
+        if (swiped)
+        {
+            // Dragging content left brings in the next slide, unless the layout runs right to left
+            const rtl = getComputedStyle(this).direction === 'rtl';
+            // Navigating first restarts the countdown, rather than resuming it as releasing the hold would
+            this.#step((dx < 0) !== rtl ? 1 : -1, 'swipe');
+        }
+        this.#endSwipe();
+    };
+
+    #onPointercancel = event => event.pointerId === this.#drag?.id && this.#endSwipe();
+
+    /** Stops tracking a drag, leaving the slide where it is, and releases its hold. */
+    #endSwipe()
+    {
+        const drag = this.#drag;
+        if (!drag) return;
+
+        this.#drag = null;
+        this.removeEventListener('pointermove', this.#onPointermove);
+        this.removeEventListener('pointerup', this.#onPointerup);
+        this.removeEventListener('pointercancel', this.#onPointercancel);
+        this.removeEventListener('lostpointercapture', this.#onPointercancel);
+        if (this.hasPointerCapture(drag.id)) this.releasePointerCapture(drag.id);
+        this.#setHold('swipe', false);
+    }
+
     #emit(type, trigger, detail)
     {
         this.dispatchEvent(new CustomEvent(type, {detail: {...detail, trigger}}));
@@ -1149,6 +1270,27 @@ function randomMotion()
         const offset = () => ((Math.random() * 2 - 1) * (scale - 1) * 45).toFixed(2);
         return {transform: `translate(${offset()}%, ${offset()}%) scale(${scale.toFixed(3)})`};
     }
+}
+
+/** Adds a pointer event's position to a drag's recent moves, dropping any older than SWIPE_WINDOW. */
+function trackMove(moves, event)
+{
+    moves.push({t: event.timeStamp, x: event.clientX});
+    while (moves[0].t < event.timeStamp - SWIPE_WINDOW) moves.shift();
+    return moves;
+}
+
+/** Swallows the click the browser fires straight after the current pointerup, if it's on the panel. */
+function suppressClick(panel)
+{
+    const swallow = event => {
+        if (!event.composedPath().includes(panel)) return;
+        event.preventDefault();
+        event.stopImmediatePropagation();
+    };
+    addEventListener('click', swallow, {capture: true, once: true});
+    // The click, if there is one, comes in the same task as the pointerup
+    setTimeout(() => removeEventListener('click', swallow, {capture: true}));
 }
 
 function resolveSrcset(srcset, base)

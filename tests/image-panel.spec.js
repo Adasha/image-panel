@@ -387,6 +387,234 @@ test.describe('navigation', () => {
 
 
 
+/** Drags the mouse across the middle of the panel. Fast, unless `slow` spreads the moves out and pauses before letting go. */
+async function mouseDrag(page, panel, dx, dy = 0, {slow = false} = {})
+{
+    const box = await panel.boundingBox();
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    await page.mouse.move(x, y);
+    await page.mouse.down();
+    if (slow)
+    {
+        for (let i = 1; i <= 10; i++)
+        {
+            await page.mouse.move(x + dx * i / 10, y + dy * i / 10);
+            await page.waitForTimeout(30);
+        }
+        await page.waitForTimeout(150);
+    }
+    else
+    {
+        await page.mouse.move(x + dx, y + dy, {steps: 8});
+    }
+    await page.mouse.up();
+}
+
+/**
+ * Drags with synthetic pointer events, for pointers Playwright can't drive (pen, and touch outside Chromium) and for
+ * flicks, since its mouse moves come a frame apart. Each leg moves to `to` px from the start in `steps` moves 5ms apart,
+ * after waiting `pause` ms.
+ */
+function pointerDrag(panel, pointerType, ...legs)
+{
+    return panel.evaluate(async (el, {pointerType, legs}) => {
+        const box = el.getBoundingClientRect();
+        const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+        const wait = ms => new Promise(resolve => setTimeout(resolve, ms));
+        const fire = (type, offset) => el.dispatchEvent(new PointerEvent(type, {
+            pointerId: 7, pointerType, isPrimary: true, button: type === 'pointermove' ? -1 : 0,
+            buttons: type === 'pointerup' ? 0 : 1, clientX: x + offset, clientY: y, bubbles: true, composed: true,
+        }));
+        let at = 0;
+        fire('pointerdown', 0);
+        for (const {to, steps = 8, pause = 0} of legs)
+        {
+            await wait(pause);
+            const from = at;
+            for (let i = 1; i <= steps; i++)
+            {
+                await wait(5);
+                fire('pointermove', at = from + (to - from) * i / steps);
+            }
+        }
+        fire('pointerup', at);
+    }, {pointerType, legs: legs.map(leg => typeof leg === 'number' ? {to: leg} : leg)});
+}
+
+/** A real touch drag through the DevTools protocol, so the browser applies touch-action. Chromium only. */
+async function touchDrag(page, panel, dx, dy)
+{
+    const cdp = await page.context().newCDPSession(page);
+    const box = await panel.boundingBox();
+    const [x, y] = [box.x + box.width / 2, box.y + box.height / 2];
+    const touch = (type, fraction) => cdp.send('Input.dispatchTouchEvent', {
+        type, touchPoints: type === 'touchEnd' ? [] : [{x: x + dx * fraction, y: y + dy * fraction}],
+    });
+    await touch('touchStart', 0);
+    for (let i = 1; i <= 10; i++)
+    {
+        await touch('touchMove', i / 10);
+    }
+    await touch('touchEnd', 1);
+}
+
+test.describe('swipe', () => {
+    test('a horizontal mouse drag navigates, with a swipe trigger', async ({page}) => {
+        const panel = await mount(page, '<image-panel swipe transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await record(panel, 'slidechange');
+
+        await mouseDrag(page, panel, -120);
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+        await mouseDrag(page, panel, 120);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await mouseDrag(page, panel, 120);
+        await expect.poll(() => currentIndex(panel)).toBe(2);
+
+        expect((await events(page)).map(e => [e.detail.index, e.detail.trigger])).toEqual([[1, 'swipe'], [0, 'swipe'], [2, 'swipe']]);
+    });
+
+    test('a slow drag needs to go far enough, and flicking back cancels it', async ({page}) => {
+        const panel = await mount(page, '<image-panel swipe transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+
+        await mouseDrag(page, panel, -30, 0, {slow: true});
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(0);
+
+        await mouseDrag(page, panel, -80, 0, {slow: true});
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+
+        // A short, quick flick is enough
+        await pointerDrag(panel, 'mouse', -25);
+        await expect.poll(() => currentIndex(panel)).toBe(2);
+
+        // Dragged well past the distance, then flicked back the other way
+        await pointerDrag(panel, 'mouse', -100, {to: -70, steps: 3, pause: 150});
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(2);
+    });
+
+    test('ignores vertical drags, clicks and a panel without swipe', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+
+        await mouseDrag(page, panel, -120);
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(0);
+
+        await panel.evaluate(el => el.swipe = true);
+        await expect(panel).toHaveAttribute('swipe', '');
+        await mouseDrag(page, panel, -40, 100);
+        await panel.click();
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(0);
+    });
+
+    test('a click that ends a drag is suppressed, and other clicks are not', async ({page}) => {
+        const panel = await mount(page, '<image-panel swipe transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await page.evaluate(() => {
+            window.clicks = 0;
+            document.addEventListener('click', () => window.clicks++);
+        });
+
+        await mouseDrag(page, panel, -120);
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+        // A drag that snaps back is still a drag
+        await mouseDrag(page, panel, -20, 0, {slow: true});
+        expect(await page.evaluate(() => window.clicks)).toBe(0);
+
+        await panel.click();
+        expect(await page.evaluate(() => window.clicks)).toBe(1);
+    });
+
+    test('follows the writing direction, and respects loop="false" at the ends', async ({page}) => {
+        const panel = await mount(page, '<image-panel swipe dir="rtl" loop="false" transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+
+        // Right to left, dragging left goes back, and there's nothing before the first slide
+        await mouseDrag(page, panel, -120);
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(0);
+
+        await mouseDrag(page, panel, 120);
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+        await mouseDrag(page, panel, 120);
+        await expect.poll(() => currentIndex(panel)).toBe(2);
+        await mouseDrag(page, panel, 120);
+        await page.waitForTimeout(100);
+        expect(await currentIndex(panel)).toBe(2);
+    });
+
+    test('holds auto-advance during the drag, and restarts the countdown after', async ({page}) => {
+        const panel = await mount(page, '<image-panel swipe autoplay interval="5000" transition-duration="0"></image-panel>');
+        await setConfig(panel, IMAGES);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await record(panel, 'hold', 'resume', 'countdown', 'slidechange');
+
+        await mouseDrag(page, panel, -30, 0, {slow: true});
+        await mouseDrag(page, panel, -120);
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+
+        const log = (await events(page)).map(e => [e.type, e.detail.trigger]);
+        expect(log).toEqual([
+            // Snapped back: the countdown carries on from where it was
+            ['hold', 'swipe'],
+            ['resume', 'swipe'],
+            ['countdown', 'swipe'],
+            // Swiped: a fresh countdown for the new slide
+            ['hold', 'swipe'],
+            ['resume', 'swipe'],
+            ['slidechange', 'swipe'],
+            ['countdown', 'swipe'],
+        ]);
+        expect((await events(page)).at(-1).detail.remaining).toBe(5000);
+    });
+
+    for (const pointerType of ['pen', 'touch'])
+    {
+        test(`works with ${pointerType} pointers`, async ({page}) => {
+            const panel = await mount(page, '<image-panel swipe transition-duration="0"></image-panel>');
+            await setConfig(panel, IMAGES);
+            await expect.poll(() => currentIndex(panel)).toBe(0);
+
+            await expect(panel).toHaveCSS('touch-action', 'pan-y pinch-zoom');
+
+            await pointerDrag(panel, pointerType, -120);
+            await expect.poll(() => currentIndex(panel)).toBe(1);
+            await pointerDrag(panel, pointerType, 120);
+            await expect.poll(() => currentIndex(panel)).toBe(0);
+        });
+    }
+
+    test.describe('real touch', () => {
+        test.skip(({browserName}) => browserName !== 'chromium', 'touch input through the DevTools protocol');
+        test.use({hasTouch: true});
+
+        test('swipes horizontally, and leaves vertical drags to scroll the page', async ({page}) => {
+            const panel = await mount(page, '<image-panel swipe transition-duration="0"></image-panel><div style="height: 3000px"></div>');
+            await setConfig(panel, IMAGES);
+            await expect.poll(() => currentIndex(panel)).toBe(0);
+            await expect(panel).toHaveCSS('touch-action', 'pan-y pinch-zoom');
+
+            await touchDrag(page, panel, -150, 0);
+            await expect.poll(() => currentIndex(panel)).toBe(1);
+
+            await touchDrag(page, panel, 0, -120);
+            await expect.poll(() => page.evaluate(() => scrollY)).toBeGreaterThan(0);
+            await page.waitForTimeout(100);
+            expect(await currentIndex(panel)).toBe(1);
+        });
+    });
+});
+
+
 test.describe('transitions', () => {
     /** Starts a transition to the next slide, and returns what's animating on each slide and the dip layer. */
     async function transitionTo(panel, config, move = 'next')

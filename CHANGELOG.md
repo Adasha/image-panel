@@ -4,6 +4,10 @@ All notable changes to image-panel are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+### Added
+
+- `swipe` attribute and property: dragging sideways with touch, pen or mouse navigates, mirrored in right-to-left layouts, without blocking vertical page scrolling. Navigation reports `trigger: 'swipe'`, and auto-advance is held during a drag as a `'swipe'` hold.
+
 ## [0.8.0] - 2026-11-14
 
 A ground-up rewrite. Most of the API has changed: see [Migrating from 0.3](README.md#migrating-from-03).

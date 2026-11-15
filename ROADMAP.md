@@ -18,6 +18,8 @@ Versions are targets, not promises. Anything that changes the shape of the API (
 
 ### Swipe
 
+**Status:** first version done, unreleased (see the changelog). Follow-the-finger dragging is still open.
+
 Navigate with touch, pen and mouse drags, like the arrow keys do with `keyboard`. It's the biggest gap for the website on phones, and it's input, not UI, so it fits the component.
 
 - `swipe` attribute and `swipe` property, off by default like `keyboard`. Events report `trigger: 'swipe'`.

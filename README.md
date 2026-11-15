@@ -113,6 +113,7 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `metadata` | `metadata` | off | Fill in missing slide fields from each image's [metadata](#metadata). |
 | `motion` | `motion` | none | Default [motion](#motion) for slides without their own: `"random"`, `"none"`, or a motion spec (config and JS only). |
 | | `keyboard` | off | Arrow keys, Home and End navigate. Makes the panel focusable. |
+| | `swipe` | off | Dragging sideways with touch, pen or mouse navigates, mirrored in right-to-left layouts. Vertical drags still scroll the page. See [Swiping](#swiping). |
 | | `pause-on-hover` | off | Hold auto-advance while the pointer is over the panel. |
 | | `src` | | URL of a JSON config. |
 
@@ -247,6 +248,16 @@ These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
 - Metadata is read from `src`, not from `srcset` candidates, since resized copies often have their metadata stripped.
 - Fields are filled in by the time `slideload` and `slidechange` fire for that slide. Slides that haven't loaded yet don't have them, and before the first load their `alt` isn't set yet either.
 
+### Swiping
+
+With `swipe`, dragging across the panel moves to the next or previous slide, like the arrow keys do with `keyboard`. Dragging left brings in the next slide, or the previous one in a right-to-left layout, and directional transitions follow the drag. Without `loop`, a swipe past either end does nothing.
+
+- A drag counts once it has gone 50px, or a quarter of the panel's width if that's less, or when it's flicked. Flicking back the other way before letting go cancels it, and the slide stays put.
+- The panel sets `touch-action: pan-y pinch-zoom`, so vertical drags scroll the page and pinches zoom it. A drag that starts out mostly vertical is left to the page.
+- Auto-advance is held while dragging (a `'swipe'` hold). A swipe restarts the countdown, as other navigation does. A drag that snaps back carries on from where the countdown was.
+- The click at the end of a drag is swallowed, so a panel inside a link doesn't follow it. Plain clicks and taps go through as normal.
+- The slide doesn't follow the finger yet: the transition plays once the swipe is decided.
+
 ## JavaScript API
 
 | | |
@@ -260,7 +271,7 @@ These are the fields Lightroom, Photoshop, Bridge and most photo managers write.
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `pauseOnHover`. `metadata` applies the next time slides load. Setting `autoplay`, `shuffle`, `fillPanel` or `metadata` to `false` sets the attribute to `"false"`, which keeps it off even if the config turns it on, as `loop="false"` does.
+Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `swipe`, `pauseOnHover`. `metadata` applies the next time slides load. Setting `autoplay`, `shuffle`, `fillPanel` or `metadata` to `false` sets the attribute to `"false"`, which keeps it off even if the config turns it on, as `loop="false"` does.
 
 ### Events
 
@@ -273,8 +284,9 @@ Every event's `detail` includes a `trigger` saying what caused it:
 | `'start'` | The panel starting up: the first slide shown after slides load, and `autoplay` starting playback. |
 | `'auto'` | The panel acting on its own: auto-advance, preloading the next slide, and playback ending. |
 | `'keyboard'` | Arrow keys, Home or End. |
+| `'swipe'` | A swipe across the panel. |
 | `'api'` | Your code: methods like `next()` or `play()`, and setting `src`, `config`, `interval` or child images. |
-| `'focus'`, `'hover'`, `'hidden'`, `'offscreen'` | A hold starting or ending: focus in the panel, hover with `pause-on-hover`, the tab being hidden, or the panel scrolling out of view. |
+| `'focus'`, `'hover'`, `'swipe'`, `'hidden'`, `'offscreen'` | A hold starting or ending: focus in the panel, hover with `pause-on-hover`, a drag with `swipe`, the tab being hidden, or the panel scrolling out of view. |
 
 Events that follow from an earlier action keep its trigger. For example, after pressing →, the image load, `slidechange` and the restarted `countdown` all report `'keyboard'`. The tables below list each event's other `detail` fields.
 
@@ -339,6 +351,7 @@ The component renders into an open shadow root.
   });
   ```
 - Auto-advance is off unless you ask for it. When it's on, add your own pause control: WCAG 2.2.2 requires a way to stop content that moves on its own. Focusing the panel holds it, and `pause-on-hover` holds it on hover too.
+- `swipe` is a path-based gesture, so WCAG 2.5.1 asks for a single-pointer alternative: give it previous and next buttons of your own, and turn on `keyboard` too.
 - With `prefers-reduced-motion: reduce`, slides change instantly and `motion` is ignored.
 - `motion` stops whenever auto-advance does, so the same pause control covers both.
 

@@ -446,6 +446,7 @@
                 <label class="check"><input type="checkbox" name="shuffle"> Shuffle</label>
                 <label class="check"><input type="checkbox" name="metadata"> Read file metadata</label>
                 <label class="check"><input type="checkbox" name="keyboard"> Keyboard navigation</label>
+                <label class="check"><input type="checkbox" name="swipe"> Swipe</label>
                 <label class="check"><input type="checkbox" name="pauseOnHover"> Pause on hover</label>
                 <label class="check"><input type="checkbox" name="fillPanel"> Always fill the panel</label>
             </fieldset>
@@ -549,7 +550,7 @@
 
         const DEFAULTS = {
             interval: 6000, transition: 'fade', direction: '', feather: 0, dipColor: '#000000', transitionEasing: 'ease-in-out', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
-            loop: true, shuffle: false, metadata: false, keyboard: false, pauseOnHover: false, fillPanel: false, autoplay: false, startIndex: 0,
+            loop: true, shuffle: false, metadata: false, keyboard: false, swipe: false, pauseOnHover: false, fillPanel: false, autoplay: false, startIndex: 0,
         };
         const MOTIONS = {
             'none': 'none',
@@ -586,6 +587,7 @@
         }
         settings.motion = Object.keys(MOTIONS).find(key => key === source.motion) ?? DEFAULTS.motion;
         settings.keyboard = true;
+        settings.swipe = true;
 
         // Indexes into `slides`, in the order the panel is showing them (differs when shuffled)
         let order = slides.map((_, i) => i);
@@ -639,6 +641,7 @@
             panel.position = panelPosition();
             panel.loop = settings.loop;
             panel.keyboard = settings.keyboard;
+            panel.swipe = settings.swipe;
             panel.pauseOnHover = settings.pauseOnHover;
             panel.fillPanel = settings.fillPanel;
             panel.motion = MOTIONS[settings.motion];
@@ -853,6 +856,7 @@
             const attributes = [
                 'src="slideshow.json"',
                 settings.keyboard && 'keyboard',
+                settings.swipe && 'swipe',
                 settings.pauseOnHover && 'pause-on-hover',
                 `aria-label="${panel.getAttribute('aria-label')}"`,
             ].filter(Boolean).join(' ');
