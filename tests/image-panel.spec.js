@@ -32,6 +32,16 @@ function record(panel, ...types)
 }
 
 const events = page => page.evaluate(() => window.events);
+
+/**
+ * Notes the index of the panel's next slide change. Polling currentIndex can miss a slide on a panel that's
+ * still auto-advancing quickly, every time, when the browser is busy.
+ */
+const watchNextChange = panel => panel.evaluate(el => {
+    window.nextChange = null;
+    el.addEventListener('slidechange', e => window.nextChange = e.detail.index, {once: true});
+});
+const nextChange = page => page.evaluate(() => window.nextChange);
 const currentIndex = panel => panel.evaluate(el => el.currentIndex);
 
 /**
@@ -1163,8 +1173,9 @@ test.describe('playback', () => {
         expect(await currentIndex(panel)).toBe(2);
         expect(await panel.evaluate(el => el.playing)).toBe(false);
 
+        await watchNextChange(panel);
         await panel.evaluate(el => el.play());
-        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await expect.poll(() => nextChange(page)).toBe(0);
     });
 
     test('without loop, a failing last image ends playback on the slide before', async ({page}) => {
@@ -1580,8 +1591,9 @@ test.describe('accessibility', () => {
         await record(panel, 'slidechange');
         await panel.evaluate(el => el.next());
         await expect.poll(() => currentIndex(panel)).toBe(1);
+        await watchNextChange(panel);
         await panel.evaluate(el => { el.interval = 50; el.play(); });
-        await expect.poll(() => currentIndex(panel)).toBe(0);
+        await expect.poll(() => nextChange(page)).toBe(0);
         await panel.evaluate(el => el.pause());
 
         expect((await events(page)).slice(0, 2).map(e => e.detail.trigger)).toEqual(['api', 'auto']);
