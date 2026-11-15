@@ -1,6 +1,6 @@
 # image-panel
 
-A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance. Originally just the image viewer on my own website, it's now the low-stakes component I've been messing around with in Claude to see just how overengineered we cn go.
+A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance. Originally just the image viewer on my own website, it's now the low-stakes component I've been messing around with in Claude to see just how overengineered we can go.
 
 It is not a gallery component, nor is it any sort of complete app. It's the viewport part of a bigger project. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
 
@@ -10,9 +10,10 @@ As far as image viewers go, this has a lot of cool features:
 - Apply transforms to images - flip, clip and transform them, apply CSS etc.
 - Add pans and zooms to images.
 - Multiple configurable transitions, including dissolve, wipes, pushes and others. Transitions have per-effect customisations, including duration, feather-edge (for wipes) and easing.
+- Set a focal point to keep in view, with a range to add leniency.
 - Built-in pulling of image [metadata](#metadata) for use in titles and captions.
 - About 23 KB minified, around 9 KB gzipped.
-- Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
+- Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), respects reduced-motion preferences.
 - Careful with resources:
   - Nothing loads until the panel is near the viewport.
   - Rotation stops while the tab is hidden.
@@ -107,6 +108,8 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | `startIndex` | `start-index` | `0` | First slide to show. |
 | `fit` | `fit` | `cover` | Default `object-fit` for slides. |
 | `position` | `position` | `center` | Default `object-position` for slides. |
+| `focalPoint` | `focal-point` | none | Default [focal point](#focal-point) for slides, e.g. `"30% 20%"`. |
+| `focalRange` | `focal-range` | `0%` | Default [focal range](#focal-point): how far `random` motion may take the focal point from the centre. |
 | `sizes` | `sizes` | panel width | Default `sizes` for slides with a `srcset`. |
 | `fillPanel` | `fill-panel` | off | Never show the panel background behind a slide. See [Filling the panel](#filling-the-panel). |
 | `metadata` | `metadata` | off | Fill in missing slide fields from each image's [metadata](#metadata). |
@@ -129,6 +132,8 @@ A slide can be a plain URL string, or an object with these fields. Child images 
 | `creator`, `copyright` | | Not displayed. Passed back in events for your own credits. |
 | `fit` | `cover` | `object-fit`: `cover`, `contain`, `fill`, `none` or `scale-down`. |
 | `position` | `center` | `object-position`, e.g. `"left 20%"`. Moves the image within the panel. |
+| `focalPoint` | | The part of the image that matters, e.g. `"30% 20%"`. Crops and motion keep it in view. See [Focal point](#focal-point). `"none"` turns off a panel-wide default. |
+| `focalRange` | `0%` | How far `random` motion may take the focal point from the centre, e.g. `"40% 10%"`. See [Focal point](#focal-point). |
 | `flip` | | `horizontal`, `vertical` or `both`. |
 | `transform` | | Any CSS transform, e.g. `"scale(1.2) rotate(-4deg)"`. Applied before `flip`. |
 | `clip` | | Any CSS `clip-path`, e.g. `"inset(5% round 8px)"`. |
@@ -177,15 +182,15 @@ A wipe's feather is any CSS length, in either order with the direction. A bare n
 {"src": "boat.jpg", "motion": ["scale(1.15) translate(-3%, 2%)", "scale(1)"]}
 ```
 
-Or an object, to add an easing (default `linear`):
+Or an object, to add an easing (default `linear`) or a transform origin:
 
 ```json
-{"src": "boat.jpg", "motion": {"from": "scale(1)", "to": "scale(1.2) translate(4%, 0)", "easing": "ease-in-out"}}
+{"src": "boat.jpg", "motion": {"from": "scale(1)", "to": "scale(1.2) translate(4%, 0)", "easing": "ease-in-out", "origin": "center"}}
 ```
 
 `{"keyframes": [...], "easing": "..."}` takes a list in the same way.
 
-`"random"` picks a gentle zoom in or out between two random points, fresh each time the slide shows, and never far enough to reveal the panel edges.
+`"random"` picks a gentle zoom in or out between two random points, fresh each time the slide shows, and never far enough to reveal the panel edges. With a [focal point](#focal-point), it zooms about that instead.
 
 A panel-wide default applies to every slide without its own `motion`, and `"motion": false` (or `"none"`) on a slide keeps it still. Set the default any of these ways, highest priority first:
 
@@ -203,9 +208,31 @@ panel.motion = 'random';                               // strings are reflected 
 Changing it affects the next slide shown, not the current one. Set `panel.motion = null` to fall back to the config.
 
 - The transforms apply to a wrapper round the image (`::part(motion)`), in panel coordinates, so they combine with the image's own `transform` and `flip` rather than replacing them. Translating by a percentage moves by that much of the panel.
+- They pivot on the slide's [focal point](#focal-point), or the centre without one. A spec's `origin` (any CSS `transform-origin`) sets its own, and `::part(motion) { transform-origin: … }` overrides both.
 - Zoom in rather than out (scale ≥ 1 throughout), or the panel background shows at the edges. [`fill-panel`](#filling-the-panel) does this for you.
 - Motion only runs while the panel is playing: it freezes with `pause()` and whenever auto-advance is held (focus, hover, hidden or offscreen), and it holds on its last frame if the slide outlives it. Without `autoplay`, slides stay still.
 - It's turned off entirely when the user prefers reduced motion.
+
+### Focal point
+
+`focalPoint` marks the part of an image that matters, so cropping and motion keep it in view:
+
+```html
+<image-panel src="slideshow.json" motion="random" focal-range="30%">
+    <img src="portrait.jpg" alt="…" data-focal-point="40% 25%">
+</image-panel>
+```
+```json
+{"src": "harbour.jpg", "focalPoint": "right 20% top 30%"}
+```
+
+It's written like a CSS `background-position`, with keywords and percentages, but it names a point in the image: `25% 40%` is a quarter of the way across and 40% of the way down, `left` is the left edge, and `right 20%` is 20% in from the right. Lengths aren't accepted, since with `srcset` the image's natural size depends on which candidate loads.
+
+- Cropping: on any axis where the image is bigger than the panel (`cover`, and `none` or `scale-down` with a large image), the panel puts the point as close to its centre as it can without pulling the image away from the edge. That replaces `position` on that axis. `position` still aligns letterboxed axes, and the crop is worked out again when the panel changes size.
+- Motion pivots on the point, so a zoom goes into the subject. See [Motion](#motion).
+- `random` motion keeps the point as central as it can at each keyframe. `focalRange` gives it room: a percentage of the way from the centre to the panel edge, from `0%` (the default) to `100%` (anywhere in frame). One value sets both axes, and two set horizontal then vertical, so `"40% 0%"` lets it drift sideways but not up and down.
+- A flipped image's point is found where the flip puts it. A slide's `transform` isn't taken into account.
+- With `fill-panel`, its extra zoom comes first: if covering the panel pushes the point off-centre, it stays there.
 
 ### Filling the panel
 
@@ -270,7 +297,7 @@ With `swipe`, dragging across the panel moves to the next or previous slide, lik
 | `playing` | Whether auto-advance is on. It stays `true` while temporarily held by hover, focus or a hidden tab. |
 | `config` | Set to load slides and settings. Reading it returns the last config applied. |
 
-Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `swipe`, `pauseOnHover`. `metadata` applies the next time slides load. Setting `autoplay`, `shuffle`, `fillPanel` or `metadata` to `false` sets the attribute to `"false"`, which keeps it off even if the config turns it on, as `loop="false"` does.
+Each attribute also has a matching property: `src`, `interval`, `transition`, `transitionEasing`, `transitionDuration`, `autoplay`, `shuffle`, `loop`, `startIndex`, `fit`, `position`, `focalPoint`, `focalRange`, `sizes`, `fillPanel`, `metadata`, `keyboard`, `swipe`, `pauseOnHover`. `metadata` applies the next time slides load. Setting `autoplay`, `shuffle`, `fillPanel` or `metadata` to `false` sets the attribute to `"false"`, which keeps it off even if the config turns it on, as `loop="false"` does.
 
 ### Events
 

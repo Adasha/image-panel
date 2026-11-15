@@ -7,6 +7,9 @@ All notable changes to image-panel are recorded here. The format follows [Keep a
 ### Added
 
 - `swipe` attribute and property: dragging sideways with touch, pen or mouse navigates, mirrored in right-to-left layouts, without blocking vertical page scrolling. Navigation reports `trigger: 'swipe'`, and auto-advance is held during a drag as a `'swipe'` hold.
+- `focalPoint` slide field (`data-focal-point`) and panel-wide `focal-point` attribute and property: the part of the image that matters, written like `background-position` with keywords and percentages. Crops on overflowing axes centre on it as far as the image allows, motion pivots on it, and `random` motion zooms about it.
+- `focalRange` slide field (`data-focal-range`) and panel-wide `focal-range` attribute and property: how far `random` motion may take the focal point from the panel centre, as one or two percentages.
+- An optional `origin` in object motion specs, to set the motion's transform origin.
 
 ## [0.8.0] - 2026-11-14
 

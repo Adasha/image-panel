@@ -6,6 +6,7 @@
 
 import {readMetadata} from './metadata.js';
 import {coverPanel, motionCoverZoom, clampEasing} from './cover.js';
+import {parseFocalPoint, parseFocalRange, placeFocalPoint, focalMotion} from './focus.js';
 
 const DEFAULT_INTERVAL = 6000;
 const DEFAULT_TRANSITION = 1000;
@@ -14,6 +15,12 @@ const FLIPS = {
     horizontal: 'scaleX(-1)',
     vertical: 'scaleY(-1)',
     both: 'scale(-1, -1)',
+};
+// Which axes each flip mirrors the image on, so a focal point can be found where it ends up
+const MIRRORS = {
+    horizontal: [true, false],
+    vertical: [false, true],
+    both: [true, true],
 };
 
 const DIRECTIONS = {
@@ -53,7 +60,7 @@ const SWIPE_WINDOW = 100;   // ms
 
 const UPGRADABLE = [
     'metadata', 'src', 'config', 'interval', 'transitionDuration', 'autoplay', 'shuffle', 'loop',
-    'startIndex', 'fit', 'position', 'sizes', 'fillPanel', 'motion', 'transition', 'transitionEasing', 'keyboard', 'swipe', 'pauseOnHover',
+    'startIndex', 'fit', 'position', 'focalPoint', 'focalRange', 'sizes', 'fillPanel', 'motion', 'transition', 'transitionEasing', 'keyboard', 'swipe', 'pauseOnHover',
 ];
 
 const template = document.createElement('template');
@@ -164,6 +171,7 @@ export class ImagePanel extends HTMLElement
     #request = null;
     #motion;                // non-string `motion` set from JS
     #described = new WeakMap(); // slide -> promise of its fields being filled in
+    #focal = new WeakMap();     // slide element on screen -> its focal point: {focal, mirror, point, followed}
 
     #playing = false;
     #holds = new Set(['offscreen']);
@@ -354,6 +362,22 @@ export class ImagePanel extends HTMLElement
     /** Default object-position for slides. */
     get position() { return this.getAttribute('position') ?? this.#config.position ?? ''; }
     set position(value) { this.setAttribute('position', value); }
+
+    /**
+     * Default focal point for slides: the part of the image that matters, written like `background-position`
+     * with keywords and percentages (`"30% 20%"`, `"left 30% top 20%"`). Crops and motion keep it in view.
+     * Takes effect from the next slide.
+     */
+    get focalPoint() { return this.getAttribute('focal-point') ?? this.#config.focalPoint ?? ''; }
+    set focalPoint(value) { this.setAttribute('focal-point', value); }
+
+    /**
+     * Default focal range for slides: how far `random` motion may take the focal point from the panel centre,
+     * as a percentage of the way to the edge, for both axes or horizontal then vertical (`"40% 10%"`).
+     * `0%` (the default) keeps it as central as possible. Takes effect from the next slide.
+     */
+    get focalRange() { return this.getAttribute('focal-range') ?? this.#config.focalRange ?? ''; }
+    set focalRange(value) { this.setAttribute('focal-range', value); }
 
     /**
      * Keep every slide covering the whole panel: fits that leave gaps become `cover`, and image transforms,
@@ -740,6 +764,7 @@ export class ImagePanel extends HTMLElement
         {
             coverPanel(img);
         }
+        const focus = this.#placeFocus(slide, img, this.#slides[index]);
 
         const previousIndex = this.#index;
         this.#index = index;
@@ -752,9 +777,15 @@ export class ImagePanel extends HTMLElement
 
         const reduced = matchMedia('(prefers-reduced-motion: reduce)').matches;
         const duration = reduced ? 0 : this.transitionDuration;
-        const motion = !reduced && normaliseMotion(this.#slides[index].motion ?? this.motion);
+        const spec = this.#slides[index].motion ?? this.motion;
+        const motion = !reduced && normaliseMotion(spec, focus);
         if (motion)
         {
+            // Motion pivots on the focal point, unless the spec sets its own origin. Random motion
+            // worked out without the point (the panel had no size) pans about the centre instead
+            if (motion.origin) frame.style.transformOrigin = motion.origin;
+            else if (focus && (focus.point || spec !== 'random')) focus.followed = true;
+            this.#followFocus(frame, focus);
             // Spans the slide's whole time on screen: fading in, the interval, and fading out
             const timing = {duration: this.interval + duration * 2, fill: 'forwards'};
             // The zoom goes on the image, inside the slide's motion, so it zooms the composition without
@@ -944,15 +975,60 @@ export class ImagePanel extends HTMLElement
         return attr === null ? !!this.#config[key] : attr !== 'false';
     }
 
-    /** Works out the fill-panel zoom again for the slides on screen, for the panel's current size. */
+    /**
+     * Places a new slide's image about its focal point, if it has one, and remembers it so it can be placed
+     * again when the panel changes size. Returns the focal point with where it is in the panel, and its range.
+     */
+    #placeFocus(slide, img, data)
+    {
+        const value = ownOr(data.focalPoint, this.focalPoint);
+        if (!value || value === 'none') return null;
+        const focal = parseFocalPoint(value);
+        if (!focal)
+        {
+            console.warn(`[image-panel] Invalid focal point "${value}"`);
+            return null;
+        }
+        const rangeValue = ownOr(data.focalRange, this.focalRange) || '0%';
+        let range = parseFocalRange(rangeValue);
+        if (!range)
+        {
+            console.warn(`[image-panel] Invalid focal range "${rangeValue}"`);
+            range = [0, 0];
+        }
+        const mirror = MIRRORS[data.flip] ?? [false, false];
+        const focus = {focal, mirror, range, point: placeFocalPoint(img, focal, mirror), followed: false};
+        this.#focal.set(slide, focus);
+        return focus;
+    }
+
+    /** Moves a motion's transform origin to where its focal point is now, if it follows one. */
+    #followFocus(frame, focus)
+    {
+        if (!focus?.followed || !focus.point) return;
+        const [x, y] = focus.point.map(value => `${Number((value * 100).toFixed(2))}%`);
+        frame.style.transformOrigin = `${x} ${y}`;
+    }
+
+    /**
+     * Places focal points and works out the fill-panel zoom again for the slides on screen, for the
+     * panel's current size.
+     */
     #recover()
     {
-        if (!this.fillPanel) return;
+        const fill = this.fillPanel;
         for (const slide of this.#stage.children)
         {
             const frame = slide.querySelector('.motion');
             const img = frame.querySelector('img');
-            coverPanel(img);
+            if (fill) coverPanel(img);
+            const focus = this.#focal.get(slide);
+            if (focus)
+            {
+                focus.point = placeFocalPoint(img, focus.focal, focus.mirror);
+                this.#followFocus(frame, focus);
+            }
+            if (!fill) continue;
             const motion = frame.getAnimations().find(anim => anim.id === 'motion');
             const zoom = img.getAnimations().find(anim => anim.id === 'motion-zoom');
             if (motion && zoom)
@@ -1239,11 +1315,12 @@ function wipeMask(dx, dy, feather)
 
 /**
  * A slide's `motion` as Web Animations keyframes. Accepts `'random'`, an array of transforms spread
- * evenly over the slide's lifespan, or an object with `from` and `to` (or `keyframes`) and an optional `easing`.
+ * evenly over the slide's lifespan, or an object with `from` and `to` (or `keyframes`) and an optional
+ * `easing` and `origin`. Random motion keeps to the slide's focal point, if it has one placed.
  */
-function normaliseMotion(motion)
+function normaliseMotion(motion, focus)
 {
-    if (motion === 'random') return randomMotion();
+    if (motion === 'random') return randomMotion(focus);
     if (!motion || typeof motion !== 'object') return null;
 
     const frames = Array.isArray(motion) ? motion : motion.keyframes ?? [motion.from, motion.to];
@@ -1252,17 +1329,21 @@ function normaliseMotion(motion)
     return {
         keyframes: frames.map(transform => ({transform: transform || 'none'})),
         easing: (!Array.isArray(motion) && motion.easing) || 'linear',
+        origin: (!Array.isArray(motion) && motion.origin) || null,
     };
 }
 
-/** A gentle zoom in or out between two random points, never showing the panel edges. */
-function randomMotion()
+/**
+ * A gentle zoom in or out between two random points, never showing the panel edges. With a focal
+ * point it zooms about that, keeping it within its range of the centre.
+ */
+function randomMotion(focus)
 {
     const near = 1 + Math.random() * 0.05;
     const far = 1.12 + Math.random() * 0.08;
-    const frames = [frame(near), frame(far)];
-    if (Math.random() < 0.5) frames.reverse();
-    return {keyframes: frames, easing: 'linear'};
+    const scales = Math.random() < 0.5 ? [near, far] : [far, near];
+    if (focus?.point) return {keyframes: focalMotion(focus.point, focus.range, scales), easing: 'linear'};
+    return {keyframes: scales.map(frame), easing: 'linear'};
 
     function frame(scale)
     {

@@ -930,6 +930,217 @@ test.describe('transitions', () => {
     });
 });
 
+test.describe('focal point', () => {
+    // Markermeer.jpg is 1920 × 960. Covering a 400 × 300 panel draws it 600 × 300, so 200px can be cropped across.
+    const frameOf = panel => panel.evaluate(el => {
+        const frame = el.shadowRoot.querySelector('.slide:last-child .motion');
+        const motion = frame?.getAnimations().find(a => a.id === 'motion');
+        return {
+            origin: frame && getComputedStyle(frame).transformOrigin,
+            keyframes: motion?.effect.getKeyframes().map(k => k.transform) ?? null,
+        };
+    });
+    const objectPosition = panel => panel.evaluate(el => el.shadowRoot.querySelector('.slide:last-child img')?.style.objectPosition ?? null);
+
+    test('reads keywords, percentages and edge offsets', async ({page}) => {
+        await page.goto('/tests/fixture.html');
+        const parsed = await page.evaluate(async () => {
+            const {parseFocalPoint, parseFocalRange} = await import('/src/focus.js');
+            const points = ['center', 'left', 'top', '25% 40%', '30%', 'left top', 'top left', 'left 30%', '30% bottom',
+                'left 30% top 20%', 'right 10% bottom', 'bottom 10% right 20%', 'center top 25%',
+                'top 30%', 'left right', '10px 20px', 'left 30% 20%', 'nonsense', ''];
+            const ranges = ['0%', '40%', '40% 10%', '150%', '0.4', '10% 20% 30%', '-10%'];
+            return {
+                points: Object.fromEntries(points.map(value => [value, parseFocalPoint(value)])),
+                ranges: Object.fromEntries(ranges.map(value => [value, parseFocalRange(value)])),
+            };
+        });
+        const near = ([x, y]) => [expect.closeTo(x, 6), expect.closeTo(y, 6)];
+        expect(parsed.points).toEqual({
+            'center': [0.5, 0.5],
+            'left': [0, 0.5],
+            'top': [0.5, 0],
+            '25% 40%': near([0.25, 0.4]),
+            '30%': near([0.3, 0.5]),
+            'left top': [0, 0],
+            'top left': [0, 0],
+            'left 30%': near([0, 0.3]),
+            '30% bottom': near([0.3, 1]),
+            'left 30% top 20%': near([0.3, 0.2]),
+            'right 10% bottom': near([0.9, 1]),
+            'bottom 10% right 20%': near([0.8, 0.9]),
+            'center top 25%': near([0.5, 0.25]),
+            // Not valid background-positions, or lengths, which aren't accepted
+            'top 30%': null, 'left right': null, '10px 20px': null, 'left 30% 20%': null, 'nonsense': null, '': null,
+        });
+        expect(parsed.ranges).toEqual({
+            '0%': [0, 0], '40%': [0.4, 0.4], '40% 10%': [0.4, 0.1], '150%': [1, 1],
+            '0.4': null, '10% 20% 30%': null, '-10%': null,
+        });
+    });
+
+    test('a cover crop centres on the focal point, as far as the image allows', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0" position="right"></image-panel>');
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '40% 50%'}, {src: IMAGES[0], focalPoint: 'left 10%'}, {src: IMAGES[0], focalPoint: '75%'}]);
+        // 200 - 0.4 × 600: the point is 40px right of centre unless the image moves 40px left. Nothing to crop vertically.
+        await expect.poll(() => objectPosition(panel)).toBe('-40px 0px');
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => objectPosition(panel)).toBe('0px 0px');
+        await panel.evaluate(el => el.next());
+        // Never pulled away from the edge: it can only move 200px
+        await expect.poll(() => objectPosition(panel)).toBe('-200px 0px');
+    });
+
+    test('from the attribute, child images, and the config; "none" opts a slide out', async ({page}) => {
+        const panel = await mount(page, `<image-panel transition-duration="0" focal-point="40% 50%">
+            <img src="${IMAGES[0]}" alt=""><img src="${IMAGES[0]}" alt="" data-focal-point="left"><img src="${IMAGES[0]}" alt="" data-focal-point="none">
+        </image-panel>`);
+        await expect.poll(() => objectPosition(panel)).toBe('-40px 0px');
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => objectPosition(panel)).toBe('0px 0px');
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => currentIndex(panel)).toBe(2);
+        expect(await objectPosition(panel)).toBe('');
+
+        expect(await panel.evaluate(el => [el.focalPoint, el.focalRange])).toEqual(['40% 50%', '']);
+        await panel.evaluate(el => { el.removeAttribute('focal-point'); el.config = {focalPoint: '30%', focalRange: '20%', slides: []}; });
+        expect(await panel.evaluate(el => [el.focalPoint, el.focalRange])).toEqual(['30%', '20%']);
+        await panel.evaluate(el => { el.focalPoint = 'left'; el.focalRange = '10% 0%'; });
+        expect(await panel.evaluate(el => [el.getAttribute('focal-point'), el.getAttribute('focal-range')])).toEqual(['left', '10% 0%']);
+        // focus() is still the element's own
+        expect(await panel.evaluate(el => typeof el.focus)).toBe('function');
+    });
+
+    test('letterboxed axes keep their position, and overflowing ones follow the point', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0" fit="none" position="right" style="width: 2000px; height: 300px"></image-panel>');
+        // Drawn at 1920 × 960: 80px spare across, aligned right, and 660px to crop down, about the point at 240px
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '50% 25%'}]);
+        await expect.poll(() => objectPosition(panel)).toBe('80px -90px');
+
+        // Nothing overflows with contain, so the position is left as it is
+        await setConfig(panel, [{src: IMAGES[0], fit: 'contain', focalPoint: '50% 25%'}]);
+        await expect.poll(() => panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelector('img')).objectFit)).toBe('contain');
+        expect(await objectPosition(panel)).toMatch(/^right( center)?$/);
+    });
+
+    test('the crop is worked out again when the panel changes size', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel>');
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '40% 50%'}]);
+        await expect.poll(() => objectPosition(panel)).toBe('-40px 0px');
+        // 300 × 300: drawn 600 × 300, 150 - 240
+        await panel.evaluate(el => el.style.width = '300px');
+        await expect.poll(() => objectPosition(panel)).toBe('-90px 0px');
+    });
+
+    test('explicit motion pivots on the focal point, unless it sets an origin', async ({page}) => {
+        const panel = await mount(page, `<image-panel autoplay interval="5000" transition-duration="0"></image-panel>`);
+        // The point ends up 160px across a 400 × 300 panel: 0.4 × 600 - 80, the most the crop can move it
+        await setConfig(panel, [
+            {src: IMAGES[0], focalPoint: '40% 20%', motion: ['scale(1)', 'scale(1.2)']},
+            {src: IMAGES[0], focalPoint: '40% 20%', flip: 'horizontal', motion: ['scale(1)', 'scale(1.2)']},
+            {src: IMAGES[0], focalPoint: '40% 20%', motion: {from: 'scale(1)', to: 'scale(1.2)', origin: 'center'}},
+            {src: IMAGES[0], motion: ['scale(1)', 'scale(1.2)']},
+        ]);
+        await expect.poll(async () => (await frameOf(panel)).origin).toBe('200px 60px');
+        expect((await frameOf(panel)).keyframes).toEqual(['scale(1)', 'scale(1.2)']);
+        await panel.evaluate(el => el.next());
+        // Flipped, the point is mirrored
+        await expect.poll(async () => (await frameOf(panel)).origin).toBe('200px 60px');
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '30% 20%', flip: 'horizontal', motion: ['scale(1)', 'scale(1.2)']}]);
+        // 0.3 × 600 - 200 = -20: clamped to 0, so the point is 180px in, and 220px once flipped
+        await expect.poll(async () => (await frameOf(panel)).origin).toBe('220px 60px');
+
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '40% 20%', motion: {from: 'scale(1)', to: 'scale(1.2)', origin: 'left top'}}]);
+        await expect.poll(async () => (await frameOf(panel)).origin).toBe('0px 0px');
+        await setConfig(panel, [{src: IMAGES[0], motion: ['scale(1)', 'scale(1.2)']}]);
+        await expect.poll(async () => (await frameOf(panel)).origin).toBe('200px 150px');
+    });
+
+    test('::part(motion) transform-origin still wins', async ({page}) => {
+        const panel = await mount(page, `<style>image-panel::part(motion) { transform-origin: 0 0 }</style>
+            <image-panel autoplay interval="5000" transition-duration="0"></image-panel>`);
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '40% 20%', motion: ['scale(1)', 'scale(1.2)']}]);
+        await expect.poll(async () => (await frameOf(panel)).keyframes).toEqual(['scale(1)', 'scale(1.2)']);
+        expect((await frameOf(panel)).origin).toBe('0px 0px');
+    });
+
+    test('random motion zooms about the focal point, keeping it as central as it can', async ({page}) => {
+        const panel = await mount(page, `<image-panel autoplay interval="5000" transition-duration="0" motion="random"></image-panel>`);
+        const landings = async () => {
+            const {origin, keyframes} = await frameOf(panel);
+            const [ox, oy] = origin.split(' ').map(value => parseFloat(value));
+            return keyframes.map(transform => {
+                const [, tx, ty, scale] = transform.match(/^translate\((-?[\d.]+)%, (-?[\d.]+)%\) scale\(([\d.]+)\)$/).map(Number);
+                // Where the point lands, and how far the scaled frame's edges are inside the panel (≥ 0 covers it)
+                return {
+                    x: ox / 400 + tx / 100, y: oy / 300 + ty / 100, scale,
+                    spare: Math.min(ox / 400 * (scale - 1) - tx / 100, (1 - ox / 400) * (scale - 1) + tx / 100,
+                        oy / 300 * (scale - 1) - ty / 100, (1 - oy / 300) * (scale - 1) + ty / 100),
+                };
+            });
+        };
+
+        // A central point stays put: the motion is a zoom about it
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '50% 50%'}]);
+        await expect.poll(async () => (await frameOf(panel)).keyframes?.length).toBe(2);
+        for (const {x, y} of await landings())
+        {
+            expect(x).toBeCloseTo(0.5, 3);
+            expect(y).toBeCloseTo(0.5, 3);
+        }
+
+        // Near the top, it can only get as close to the centre as the zoom lets the frame move down
+        for (let i = 0; i < 5; i++)
+        {
+            await setConfig(panel, [{src: IMAGES[0], focalPoint: '50% 10%'}]);
+            await expect.poll(async () => (await frameOf(panel)).origin).toBe('200px 30px');
+            for (const {x, y, scale, spare} of await landings())
+            {
+                expect(x).toBeCloseTo(0.5, 3);
+                expect(y).toBeCloseTo(0.1 * scale - (scale - 1) * 0.05, 3);
+                expect(spare).toBeGreaterThanOrEqual(-0.0001);
+            }
+        }
+
+        // With range, it wanders, but no further than allowed, and never uncovers the panel
+        for (let i = 0; i < 5; i++)
+        {
+            await setConfig(panel, {focalRange: '40% 0%', slides: [{src: IMAGES[0], focalPoint: '50% 50%'}]});
+            await expect.poll(async () => (await frameOf(panel)).keyframes?.length).toBe(2);
+            for (const {x, y, spare} of await landings())
+            {
+                expect(Math.abs(x - 0.5)).toBeLessThanOrEqual(0.2001);
+                expect(y).toBeCloseTo(0.5, 3);
+                expect(spare).toBeGreaterThanOrEqual(-0.0001);
+            }
+        }
+        expect(await uncovered(panel, 20)).toEqual([]);
+    });
+
+    test('fill-panel crops a contained image about the point and still covers the motion', async ({page}) => {
+        const panel = await mount(page, `<image-panel fill-panel fit="contain" autoplay interval="5000" transition-duration="0"
+            motion="random" focal-range="100%"></image-panel>`);
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '40% 50%', transform: 'rotate(5deg)'}]);
+        await expect.poll(() => objectPosition(panel)).toBe('-40px 0px');
+        expect(await panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelector('img')).objectFit)).toBe('cover');
+        expect(await motionShortfall(panel)).toBeLessThanOrEqual(0);
+    });
+
+    test('invalid values are ignored with a warning', async ({page}) => {
+        const warnings = [];
+        page.on('console', message => message.type() === 'warning' && warnings.push(message.text()));
+        const panel = await mount(page, '<image-panel transition-duration="0" focal-range="lots"></image-panel>');
+        await setConfig(panel, [{src: IMAGES[0], focalPoint: '10px 20px'}, {src: IMAGES[0], focalPoint: '40%'}]);
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        expect(await objectPosition(panel)).toBe('');
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => objectPosition(panel)).toBe('-40px 0px');
+        expect(warnings.some(text => text.includes('focal point "10px 20px"'))).toBe(true);
+        expect(warnings.some(text => text.includes('focal range "lots"'))).toBe(true);
+    });
+});
+
+
 test.describe('playback', () => {
     test('autoplays, and pause() stops it', async ({page}) => {
         const panel = await mount(page, '<image-panel autoplay interval="150" transition-duration="0"></image-panel>');
