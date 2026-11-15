@@ -7,10 +7,10 @@ Versions are targets, not promises. Anything that changes the shape of the API (
 | Version | Theme | Items |
 | --- | --- | --- |
 | **0.8** | The rewrite | Released. See the [changelog](CHANGELOG.md#080---2026-11-14). |
-| **0.9** | Input and slides | [Swipe](#swipe), [per-slide interval](#per-slide-interval), [format sources](#format-sources) |
+| **0.9** | Input and slides | [Swipe](#swipe), [focal point](#focal-point), [per-slide interval](#per-slide-interval), [format sources](#format-sources) |
 | **0.10** | Long-running displays and loading | [Reloading the config](#reloading-the-config), [placeholders](#placeholders), [Save-Data](#save-data) |
 | **1.0** | Stable API | [API review and freeze](#10-api-review-and-freeze) |
-| **1.x** | Additive | [Custom transitions](#custom-transitions), [clock sync](#clock-sync), [focal-point motion](#focal-point-motion), [video slides](#video-slides) (undecided) |
+| **1.x** | Additive | [Custom transitions](#custom-transitions), [clock sync](#clock-sync), [focus area](#focus-area), [points of interest](#points-of-interest), [video slides](#video-slides) (undecided) |
 
 ---
 
@@ -25,6 +25,22 @@ Navigate with touch, pen and mouse drags, like the arrow keys do with `keyboard`
 - Later, maybe: the slide follows the finger during the drag, then completes or snaps back. That's harder with Web Animations transitions, so it's left out of the first version.
 - Holds auto-advance during the drag, as a `'swipe'` hold. Moving to a slide restarts the countdown as other input does.
 - **Done when:** works with touch, pen and mouse in Chromium and Firefox (Playwright touch emulation), doesn't block page scrolling, and respects `loop="false"` at the ends.
+
+### Focal point
+
+Mark the part of an image that matters, so cropping, zooming and panning never lose it. Without it, `motion: "random"` can drift off a face, and a narrow panel can crop the subject out.
+
+- `focus` slide field (`data-focus` on child images), plus a panel-wide `focus` attribute and property as the default, like `position`.
+- Written like a CSS `background-position`: keywords, percentages and offsets (`left 30% top 20%`, `25% 40%`, `center`). It names a point in the image, so `25% 40%` is a quarter of the way across and 40% of the way down. A keyword puts the point on that edge (`left` is the left edge), and an offset is measured in from it. Lengths are pixels of the image at its natural size.
+- Placement: the panel keeps the focal point as close to its centre as the image allows. The image never pulls away from the panel edge to do it, so a point near the image edge ends up near the panel edge, and a point on it (`left`) can sit right at the edge.
+- Leniency: a setting for how far the point may stray from centre, from "as central as possible" (the default) to "anywhere in frame". It gives `random` motion room to move.
+- Cropping: under `fit="cover"`, the crop is set by the focal point rather than by `position`. `position` still aligns letterboxed images (`contain`, `none`, `scale-down`) and sets the crop when there's no focal point.
+- Motion: `random` zooms in or out about the focal point and keeps it within the leniency at every keyframe. Explicit motion specs are left as written.
+- Precedence: `fill-panel` comes first. If the zoom it needs to keep the panel covered pushes the focal point off-centre, or out of frame, it stays that way.
+- **Decisions before starting:**
+  - The leniency setting's name, units (a fraction of the panel, or a margin) and whether it's per slide as well as panel-wide.
+- A point says where the subject is but not how big it is. Giving it a size comes later, as a [focus area](#focus-area), and the API here should leave room for it.
+- **Done when:** random motion and `fill-panel` keep the focal point in view across `fit` values and panel shapes, a cover crop centres on it, and there are tests.
 
 ### Per-slide interval
 
@@ -130,11 +146,29 @@ Work out the current slide from wall-clock time instead of from page load, so se
 - `sync` attribute taking an epoch (ISO date or timestamp). Slide index and remaining time come from `(now - epoch)` and the total cycle length.
 - Needs fixed timing, so it ignores holds (or documents that a held screen drifts until the next slide) and works with `shuffle` only with a seeded shuffle.
 
-### Focal-point motion
+### Focus area
 
-Make `motion: "random"` keep the subject in frame by zooming toward the slide's `position`, treated as a focal point, rather than toward a random point.
+Give the focal point a size, so the panel keeps a whole subject in view, not just its centre. Builds on the [focal point](#focal-point).
 
-- Possibly a separate `focus` slide field, if `position` and the focal point need to differ.
+- A width and height round the focal point, as percentages of the image or natural-size pixels, for example `focusSize: "20% 25%"` (`data-focus-size`). Without one, the focus stays a point.
+- Cropping and motion keep the whole area in frame where the panel's shape allows it. That caps how far `random` zooms in, and keeps a small or oddly shaped panel from cropping the subject's edges.
+- If the area can't fit (a tall subject in a wide, short panel), it's kept centred on the focal point and cropped evenly.
+- `fill-panel` still takes precedence, as for the point.
+- **Decisions before starting:**
+  - A separate field, or one `focus` value that takes an optional size.
+  - Whether leniency then applies to the area's edges rather than its centre.
+
+### Points of interest
+
+Guide `random` motion between chosen points in the image, instead of picking them at random. Builds on the [focal point](#focal-point).
+
+- `points` slide field: a list of positions, written the same way as `focus`.
+- With a focal point, a pan runs between it and one of the points (either way round). Without one, it runs between two of the points.
+- Optional rules on a slide to shape how the points are used, for example:
+  - the pan always ends on the focal point;
+  - the pan moves along one axis only;
+  - zoom in only.
+- **Needs planning:** how rules are named and combined, whether they live in the slide field or a separate one, and what happens when a rule can't be met (such as one-axis motion between points that differ on both).
 
 ### Video slides
 
