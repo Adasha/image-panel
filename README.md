@@ -12,7 +12,7 @@ As far as image viewers go, this has a lot of cool features:
 - Multiple configurable transitions, including dissolve, wipes, pushes and others. Transitions have per-effect customisations, including duration, feather-edge (for wipes) and easing.
 - Set a focal point to keep in view, with a range to add leniency.
 - Built-in pulling of image [metadata](#metadata) for use in titles and captions.
-- About 23 KB minified, around 9 KB gzipped.
+- About 30 KB minified, around 12 KB gzipped.
 - Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), respects reduced-motion preferences.
 - Careful with resources:
   - Nothing loads until the panel is near the viewport.
