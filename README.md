@@ -1,15 +1,16 @@
 # image-panel
 
-A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance.
+A small, dependency-free image viewer web component. It shows one image at a time, transitions between them (fade, dip to a colour, wipe, slide or push), and can auto-advance. Originally just the image viewer on my own website, it's now the low-stakes component I've been messing around with in Claude to see just how overengineered we cn go.
 
-It is not a gallery component, nor is it any sort of complete app. It's the viewport part of a bigger project - I've used it on websites in slideshows/carousels, in a digital picture frame and as the image renderer in AV installation projects. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
+It is not a gallery component, nor is it any sort of complete app. It's the viewport part of a bigger project. It has no built-in UI: you drive it from attributes, a JSON file or JavaScript, and build whatever controls you need on top using its methods and events.
 
 As far as image viewers go, this has a lot of cool features:
 
 - Albums configured from nested HTML, JavaScript or JSON.
-- Apply transforms to images - flip them, apply CSS etc. Add pans and zooms to images.
+- Apply transforms to images - flip, clip and transform them, apply CSS etc.
+- Add pans and zooms to images.
 - Multiple configurable transitions, including dissolve, wipes, pushes and others. Transitions have per-effect customisations, including duration, feather-edge (for wipes) and easing.
-- Built-in pulling of image metadata for use in titles and captions.
+- Built-in pulling of image [metadata](#metadata) for use in titles and captions.
 - About 23 KB minified, around 9 KB gzipped.
 - Accessible by default: real `<img>` elements with alt text and carousel semantics. Auto-advance holds on focus (and optionally hover), and reduced-motion preferences are respected.
 - Careful with resources:
@@ -17,8 +18,6 @@ As far as image viewers go, this has a lot of cool features:
   - Rotation stops while the tab is hidden.
   - The next image is preloaded and decoded before it's shown.
   - `srcset` is supported, and `sizes` defaults to the panel's rendered width.
-- Each slide can be fitted, positioned, flipped, transformed and clipped.
-- Titles, captions, alt text and credits can be read from the image files' own [metadata](#metadata).
 
 ## Usage
 
