@@ -1027,6 +1027,13 @@ test.describe('focal point', () => {
         await setConfig(panel, [{src: IMAGES[0], focalPoint: '50% 25%'}]);
         await expect.poll(() => objectPosition(panel)).toBe('80px -90px');
 
+        // A position set on the image from outside since is kept for the letterboxed axis next time
+        await panel.evaluate(el => {
+            el.shadowRoot.querySelector('img').style.objectPosition = 'left';
+            el.style.width = '1990px';
+        });
+        await expect.poll(() => objectPosition(panel)).toBe('0px -90px');
+
         // Nothing overflows with contain, so the position is left as it is
         await setConfig(panel, [{src: IMAGES[0], fit: 'contain', focalPoint: '50% 25%'}]);
         await expect.poll(() => panel.evaluate(el => getComputedStyle(el.shadowRoot.querySelector('img')).objectFit)).toBe('contain');

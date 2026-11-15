@@ -73,7 +73,7 @@ export function parseFocalRange(value)
     return [x, y];
 }
 
-const positions = new WeakMap(); // image -> its object-position as set, before any focal crop
+const positions = new WeakMap(); // image -> its object-position as set, and as last placed
 
 /**
  * Crops an attached image about its focal point on any axis where it overflows its box, keeping the
@@ -83,8 +83,11 @@ const positions = new WeakMap(); // image -> its object-position as set, before 
  */
 export function placeFocalPoint(img, [fx, fy], mirror = [false, false])
 {
-    if (!positions.has(img)) positions.set(img, img.style.objectPosition);
-    img.style.objectPosition = positions.get(img);
+    // Start again from the position as set, unless something else has changed it since
+    const last = positions.get(img);
+    const raw = last && img.style.objectPosition === last.placed ? last.raw : img.style.objectPosition;
+    img.style.objectPosition = raw;
+    positions.set(img, {raw, placed: raw});
 
     const [width, height, naturalWidth, naturalHeight] = [img.offsetWidth, img.offsetHeight, img.naturalWidth, img.naturalHeight];
     if (!width || !height || !naturalWidth || !naturalHeight) return null;
@@ -104,6 +107,7 @@ export function placeFocalPoint(img, [fx, fy], mirror = [false, false])
     if (x.cropped || y.cropped)
     {
         img.style.objectPosition = `${round(x.offset)}px ${round(y.offset)}px`;
+        positions.set(img, {raw, placed: img.style.objectPosition});
     }
     const px = (x.offset + fx * w) / width;
     const py = (y.offset + fy * h) / height;

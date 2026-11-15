@@ -51,6 +51,30 @@
             margin: 0.25rem 0 0;
             color: GrayText;
         }
+        .compare {
+            display: grid;
+            gap: 1rem;
+        }
+        /* Drag the corner to reshape the panel and watch the crop follow */
+        .compare image-panel {
+            aspect-ratio: auto;
+            width: 100%;
+            height: 12rem;
+            min-width: 8rem;
+            max-width: 100%;
+            min-height: 6rem;
+            resize: both;
+            overflow: hidden;
+        }
+        .compare figcaption {
+            margin-block-start: 0.25rem;
+        }
+        pre {
+            overflow-x: auto;
+            padding: 0.75rem;
+            background: color-mix(in srgb, currentColor 6%, transparent);
+            border-radius: 6px;
+        }
     </style>
 </head>
 <body>
@@ -90,6 +114,36 @@
         <img src="images/BigPit-ChainMacro.jpg" alt="Close-up of heavy, rust-covered chain links." data-flip="vertical" loading="lazy">
         <img src="images/KhaiDinh-Silhouette-Edit.jpg" alt="Silhouette of a statue against a window of blue sky." data-fit="contain" loading="lazy">
     </image-panel>
+
+    <h2>Focal point</h2>
+    <p>
+        The same slides in two wide, short panels. The top one crops about the centre, as <code>object-fit: cover</code> does,
+        and its random motion drifts anywhere. The bottom one has a focal point on each image, so the crop keeps the subject in view
+        and the motion zooms about it. Its <code>focal-range</code> lets the point wander sideways but not up and down.
+        Drag a panel's corner to change its shape.
+    </p>
+
+    <div class="compare">
+        <figure>
+            <image-panel autoplay motion="random" interval="5000" aria-label="Photographs cropped about the centre">
+                <img src="images/HaLongBay-Woman-in-shop-boat.jpg" alt="A woman in a small wooden boat piled with goods for sale." loading="lazy">
+                <img src="images/KhaiDinh-Silhouette-Edit.jpg" alt="Silhouette of the statue of Emperor Khải Định against a window of blue sky." loading="lazy">
+            </image-panel>
+            <figcaption><p>Without a focal point</p></figcaption>
+        </figure>
+        <figure>
+            <image-panel autoplay motion="random" interval="5000" focal-range="30% 0%" aria-label="Photographs cropped about their focal points">
+                <img src="images/HaLongBay-Woman-in-shop-boat.jpg" alt="A woman in a small wooden boat piled with goods for sale." data-focal-point="48% 28%" loading="lazy">
+                <img src="images/KhaiDinh-Silhouette-Edit.jpg" alt="Silhouette of the statue of Emperor Khải Định against a window of blue sky." data-focal-point="52% 30%" loading="lazy">
+            </image-panel>
+            <figcaption><p>With <code>data-focal-point</code> on each image</p></figcaption>
+        </figure>
+    </div>
+
+    <pre><code>&lt;image-panel autoplay motion="random" focal-range="30% 0%"&gt;
+    &lt;img src="boat.jpg" alt="…" data-focal-point="48% 28%"&gt;
+    &lt;img src="statue.jpg" alt="…" data-focal-point="52% 30%"&gt;
+&lt;/image-panel&gt;</code></pre>
 
     <script src="../dist/image-panel.js"></script>
     <script>

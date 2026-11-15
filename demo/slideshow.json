@@ -9,6 +9,7 @@
 	"slides": [
 		{
 			"src": "HaLongBay-Woman-in-shop-boat.jpg",
+			"focalPoint": "48% 28%",
 			"title": "Boat stall in Hạ Long Bay",
 			"alt": "A woman in a small wooden boat piled with goods for sale floats beside a tourist junk in Hạ Long Bay.",
 			"description": "In lieu of shopping malls, wherever you go in Vietnam somebody will set up a stall with a spread of goods for sale to tourists. The absence of dry land is no obstacle, as this woman who floated up to our junk boat in Hạ Long Bay demonstrated."
@@ -16,7 +17,7 @@
 		{
 			"src": "KhaiDinh-Silhouette-Edit.jpg",
 			"alt": "Silhouette of the statue of Emperor Khải Định against a window of bright blue sky.",
-			"position": "center 30%",
+			"focalPoint": "52% 30%",
 			"motion": {"from": "scale(1.15) translate(0, 3%)", "to": "scale(1)", "easing": "ease-out"}
 		},
 		{

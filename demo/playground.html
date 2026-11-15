@@ -181,6 +181,78 @@
             transform: scaleX(0);
         }
 
+        /* Focal point overlay: where the point is now, and the area random motion may move it in */
+        .focal {
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+        }
+        .focal[hidden] {
+            display: none;
+        }
+        .focal-range {
+            position: absolute;
+            inset: 50%;
+            outline: 1px dashed #fffc;
+            box-shadow: 0 0 0 1px #0006;
+        }
+        .focal-marker {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 1.5rem;
+            height: 1.5rem;
+            margin: -0.75rem 0 0 -0.75rem;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 1px #000a, inset 0 0 0 1px #000a;
+        }
+        .focal-marker::before, .focal-marker::after {
+            content: '';
+            position: absolute;
+            background: #fff;
+            box-shadow: 0 0 0 1px #000a;
+        }
+        .focal-marker::before {
+            inset: 50% -0.5rem auto;
+            height: 1px;
+        }
+        .focal-marker::after {
+            inset: -0.5rem auto -0.5rem 50%;
+            width: 1px;
+        }
+
+        /* Focal point picker: the whole image, to click on */
+        .picker {
+            position: relative;
+            grid-column: 2 / -1;
+            border-radius: 4px;
+            overflow: hidden;
+            cursor: crosshair;
+            line-height: 0;
+        }
+        .picker:focus-visible {
+            outline: 2px solid Highlight;
+            outline-offset: 2px;
+        }
+        .picker img {
+            width: 100%;
+            height: auto;
+        }
+        .picker-dot {
+            position: absolute;
+            width: 0.75rem;
+            height: 0.75rem;
+            margin: -0.375rem 0 0 -0.375rem;
+            border: 2px solid #fff;
+            border-radius: 50%;
+            box-shadow: 0 0 0 1px #000a;
+            pointer-events: none;
+        }
+        .picker-dot[hidden] {
+            display: none;
+        }
+
         /* Transport */
         .transport {
             display: flex;
@@ -325,6 +397,10 @@
                         <div class="progress"><div id="progress"></div></div>
                     </div>
                 </div>
+                <div class="focal" id="focal" hidden>
+                    <div class="focal-range" id="focal-range-box"></div>
+                    <div class="focal-marker" id="focal-marker"></div>
+                </div>
             </div>
 
             <div class="transport">
@@ -332,6 +408,7 @@
                 <button type="button" id="toggle" aria-controls="panel">Play</button>
                 <button type="button" id="next" aria-controls="panel">Next</button>
                 <label class="check"><input type="checkbox" id="show-osd" checked> Show overlay</label>
+                <label class="check"><input type="checkbox" id="show-focal"> Show focal point</label>
             </div>
             <p class="visually-hidden" role="status" id="announcer"></p>
 
@@ -432,6 +509,20 @@
                     <output for="positionY" data-unit="%"></output>
                 </div>
                 <div class="field">
+                    <label for="focalPoint">Focal point</label>
+                    <input type="text" id="focalPoint" name="focalPoint" list="positions" placeholder="None">
+                </div>
+                <div class="field">
+                    <label for="focalRangeX">Focal range X</label>
+                    <input type="range" id="focalRangeX" name="focalRangeX" min="0" max="100">
+                    <output for="focalRangeX" data-unit="%"></output>
+                </div>
+                <div class="field">
+                    <label for="focalRangeY">Focal range Y</label>
+                    <input type="range" id="focalRangeY" name="focalRangeY" min="0" max="100">
+                    <output for="focalRangeY" data-unit="%"></output>
+                </div>
+                <div class="field">
                     <label for="motion">Motion</label>
                     <select id="motion" name="motion">
                         <option value="none">None</option>
@@ -479,6 +570,23 @@
                 <div class="field">
                     <label for="slide-position">Position</label>
                     <input type="text" id="slide-position" name="position" list="positions" placeholder="Panel default">
+                </div>
+                <div class="field">
+                    <label for="slide-focalPoint">Focal point</label>
+                    <input type="text" id="slide-focalPoint" name="focalPoint" list="positions" placeholder="Panel default, e.g. 40% 25%">
+                </div>
+                <div class="field">
+                    <span aria-hidden="true"></span>
+                    <div class="picker" id="picker" tabindex="0" role="group" aria-label="Focal point picker"
+                         aria-describedby="picker-hint">
+                        <img id="picker-img" alt="">
+                        <span class="picker-dot" id="picker-dot" hidden></span>
+                    </div>
+                </div>
+                <p class="hint" id="picker-hint">Click the image to set the focal point, or focus it and use the arrow keys (Shift for bigger steps).</p>
+                <div class="field">
+                    <label for="slide-focalRange">Focal range</label>
+                    <input type="text" id="slide-focalRange" name="focalRange" placeholder="Panel default, e.g. 40% 10%">
                 </div>
                 <div class="field">
                     <label for="slide-flip">Flip</label>
@@ -542,6 +650,7 @@
         // From src rather than dist, so the preview below shares the panel's own copy of the fill-panel code
         import '../src/image-panel.js';
         import {coverPanel} from '../src/cover.js';
+        import {parseFocalPoint, placeFocalPoint} from '../src/focus.js';
 
         const $ = id => document.getElementById(id);
         const panel = $('panel');
@@ -549,7 +658,7 @@
         const slideFields = $('slide-settings');
 
         const DEFAULTS = {
-            interval: 6000, transition: 'fade', direction: '', feather: 0, dipColor: '#000000', transitionEasing: 'ease-in-out', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, motion: 'none',
+            interval: 6000, transition: 'fade', direction: '', feather: 0, dipColor: '#000000', transitionEasing: 'ease-in-out', transitionDuration: 1000, fit: 'cover', positionX: 50, positionY: 50, focalPoint: '', focalRangeX: 0, focalRangeY: 0, motion: 'none',
             loop: true, shuffle: false, metadata: false, keyboard: false, swipe: false, pauseOnHover: false, fillPanel: false, autoplay: false, startIndex: 0,
         };
         const MOTIONS = {
@@ -561,6 +670,8 @@
             'pan-right': ['scale(1.12) translate(-4%, 0)', 'scale(1.12) translate(4%, 0)'],
         };
         const FLIPS = {horizontal: 'scaleX(-1)', vertical: 'scaleY(-1)', both: 'scale(-1, -1)'};
+        const MIRRORS = {horizontal: [true, false], vertical: [false, true], both: [true, true]};
+        const SLIDE_TEXT_FIELDS = ['fit', 'position', 'focalPoint', 'focalRange', 'flip', 'transform', 'clip', 'transition'];
         const FIELDS = ['title', 'description', 'creator', 'copyright', 'alt'];
         const BASE_PATH = 'images/';
 
@@ -572,6 +683,11 @@
         for (const key of Object.keys(DEFAULTS))
         {
             if (key in source) settings[key] = source[key];
+        }
+        if (typeof source.focalRange === 'string')
+        {
+            const [x, y = x] = source.focalRange.trim().split(/\s+/).map(parseFloat);
+            [settings.focalRangeX, settings.focalRangeY] = [x || 0, y || 0];
         }
         // Split the config's transition string into the form's fields
         if (typeof source.transition === 'string')
@@ -600,6 +716,14 @@
         const panelPosition = () => settings.positionX === 50 && settings.positionY === 50
             ? 'center'
             : `${settings.positionX}% ${settings.positionY}%`;
+
+        /** The `focal-range` value for the two sliders, or '' for the default. */
+        function focalRangeString()
+        {
+            const {focalRangeX: x, focalRangeY: y} = settings;
+            if (!x && !y) return '';
+            return x === y ? `${x}%` : `${x}% ${y}%`;
+        }
 
         /** The `transition` string for the chosen effect, direction and colour. */
         function transitionString()
@@ -639,6 +763,8 @@
             panel.transitionEasing = settings.transitionEasing;
             panel.fit = settings.fit;
             panel.position = panelPosition();
+            panel.focalPoint = settings.focalPoint.trim();
+            panel.focalRange = focalRangeString();
             panel.loop = settings.loop;
             panel.keyboard = settings.keyboard;
             panel.swipe = settings.swipe;
@@ -673,10 +799,19 @@
 
         const resolve = src => new URL(src, new URL(BASE_PATH, location.href)).href;
 
+        const currentImage = () => [...panel.shadowRoot.querySelectorAll('[part~="slide"]')].at(-1)?.querySelector('[part~="image"]');
+
+        /** A slide's focal point as [x, y] fractions of its image, from the slide or the panel, or null. */
+        function focalOf(slide)
+        {
+            const value = (slide?.focalPoint || settings.focalPoint || '').trim();
+            return value && value !== 'none' ? parseFocalPoint(value) : null;
+        }
+
         /** Applies a slide's look straight to its image on screen, mirroring what the panel does, for instant feedback while typing. */
         function preview(index)
         {
-            const img = [...panel.shadowRoot.querySelectorAll('[part~="slide"]')].at(-1)?.querySelector('[part~="image"]');
+            const img = currentImage();
             if (!img || order[panel.currentIndex] !== index) return;
 
             const slide = slides[index];
@@ -686,6 +821,10 @@
             img.style.clipPath = slide.clip || '';
             // The same cover fit and zoom the panel gives its slides
             if (panel.fillPanel) coverPanel(img);
+            // and the same crop about the focal point. Motion picks it up when the slide reloads.
+            const focal = focalOf(slide);
+            if (focal) placeFocalPoint(img, focal, MIRRORS[slide.flip]);
+            locateFocal();
         }
 
 
@@ -732,14 +871,15 @@
             updateOutputs();
             syncTransitionFields();
             applyLive();
-            if (name === 'fit' || name.startsWith('position')) preview(order[panel.currentIndex]);
+            if (name === 'fit' || name.startsWith('position') || name === 'focalPoint') preview(order[panel.currentIndex]);
+            if (name.startsWith('focal')) showPicker();
             renderCode();
         });
 
         // Settings that only take effect on load, or that you'd want to see straight away, reload the slides
         $('panel-settings').addEventListener('change', ({target: {name}}) => {
             if (name === 'shuffle') settings.shuffle ? reload({reshuffle: true}) : reload({at: order[panel.currentIndex]});
-            else if (name === 'metadata' || name === 'motion') reload();
+            else if (name === 'metadata' || name === 'motion' || name.startsWith('focal')) reload();
         });
 
         $('load-settings').addEventListener('input', () => {
@@ -772,7 +912,7 @@
             const slide = slides[index];
             const {elements} = slideFields;
             $('slide-number').textContent = `${order.indexOf(index) + 1}: ${slide.src}`;
-            for (const name of ['fit', 'position', 'flip', 'transform', 'clip', 'transition'])
+            for (const name of SLIDE_TEXT_FIELDS)
             {
                 elements[name].value = slide[name] ?? '';
             }
@@ -780,6 +920,7 @@
             elements.keyframes.value = keyframesOf(slide.motion).join('\n');
             elements.easing.value = slide.motion?.easing ?? 'linear';
             syncMotionFields();
+            showPicker();
         }
 
         function syncMotionFields()
@@ -793,7 +934,7 @@
         {
             const slide = slides[editing];
             const {elements} = slideFields;
-            for (const name of ['fit', 'position', 'flip', 'transform', 'clip', 'transition'])
+            for (const name of SLIDE_TEXT_FIELDS)
             {
                 slide[name] = elements[name].value.trim();
             }
@@ -821,9 +962,56 @@
             if (editing < 0) return;
             readSlide();
             preview(editing);
+            showPicker();
             renderCode();
         });
         slideFields.addEventListener('change', () => editing >= 0 && reload({at: order.indexOf(editing)}));
+
+
+        // Focal point picker
+
+        const picker = $('picker');
+        let pickerReload = 0;
+
+        /** Shows the slide being edited in the picker, with its focal point (its own, or the panel's) marked. */
+        function showPicker()
+        {
+            if (editing < 0) return;
+            const slide = slides[editing];
+            const src = resolve(slide.src);
+            if ($('picker-img').src !== src) $('picker-img').src = src;
+            const focal = focalOf(slide);
+            const dot = $('picker-dot');
+            dot.hidden = !focal;
+            if (focal) [dot.style.left, dot.style.top] = focal.map(value => `${value * 100}%`);
+        }
+
+        /** Sets the slide's focal point from the picker, previews it now, and reloads the slide for its motion shortly after. */
+        function pick(x, y)
+        {
+            const clamp = value => Math.round(Math.min(100, Math.max(0, value)));
+            slideFields.elements.focalPoint.value = `${clamp(x)}% ${clamp(y)}%`;
+            readSlide();
+            preview(editing);
+            showPicker();
+            renderCode();
+            clearTimeout(pickerReload);
+            pickerReload = setTimeout(() => reload({at: order.indexOf(editing)}), 400);
+        }
+
+        picker.addEventListener('click', event => {
+            if (editing < 0) return;
+            const box = $('picker-img').getBoundingClientRect();
+            pick((event.clientX - box.left) / box.width * 100, (event.clientY - box.top) / box.height * 100);
+        });
+        picker.addEventListener('keydown', event => {
+            const steps = {ArrowLeft: [-1, 0], ArrowRight: [1, 0], ArrowUp: [0, -1], ArrowDown: [0, 1]}[event.key];
+            if (!steps || editing < 0) return;
+            event.preventDefault();
+            const [x, y] = (focalOf(slides[editing]) ?? [0.5, 0.5]).map(value => value * 100);
+            const step = event.shiftKey ? 10 : 1;
+            pick(x + steps[0] * step, y + steps[1] * step);
+        });
 
         $('reset-slide').addEventListener('click', () => {
             if (editing < 0) return;
@@ -846,6 +1034,8 @@
             }
             if (transitionString() !== 'fade') config.transition = transitionString();
             if (panelPosition() !== 'center') config.position = panelPosition();
+            if (settings.focalPoint.trim()) config.focalPoint = settings.focalPoint.trim();
+            if (focalRangeString()) config.focalRange = focalRangeString();
             if (settings.motion !== 'none') config.motion = MOTIONS[settings.motion];
             config.slides = slides.map(clean);
             return config;
@@ -961,6 +1151,54 @@
         panel.addEventListener('resume', () => (holds.clear(), renderState()));
         panel.addEventListener('play', renderState);
         panel.addEventListener('pause', renderState);
+
+
+        // Focal point overlay
+
+        const focalOverlay = $('focal');
+        const marker = $('focal-marker');
+        let focalPoint = null;  // where the slide on screen has its focal point in the panel, as [x, y] fractions
+
+        $('show-focal').addEventListener('change', ({target}) => (focalOverlay.hidden = !target.checked, locateFocal()));
+
+        /**
+         * Finds where the slide on screen puts its focal point, with the panel's own code (it's the same
+         * module, so asking again just places it where it already is), and sizes the range box to match.
+         */
+        function locateFocal()
+        {
+            const img = currentImage();
+            const slide = slides[order[panel.currentIndex]];
+            const focal = img && focalOf(slide);
+            focalPoint = focal ? placeFocalPoint(img, focal, MIRRORS[slide.flip]) : null;
+            marker.hidden = !focalPoint;
+
+            const range = (slide?.focalRange || focalRangeString() || '0%').trim().split(/\s+/).map(parseFloat);
+            const [x, y = x] = range.map(value => Math.min(100, value || 0) / 2);
+            $('focal-range-box').style.inset = `${50 - y}% ${50 - x}%`;
+            $('focal-range-box').hidden = !focalPoint;
+        }
+
+        /** Keeps the marker on the point as motion moves the image about. */
+        function trackFocal()
+        {
+            requestAnimationFrame(trackFocal);
+            if (focalOverlay.hidden || !focalPoint) return;
+            const frame = currentImage()?.parentElement;
+            if (!frame) return;
+            let [x, y] = [focalPoint[0] * frame.offsetWidth, focalPoint[1] * frame.offsetHeight];
+            const style = getComputedStyle(frame);
+            if (style.transform !== 'none')
+            {
+                const [ox, oy] = style.transformOrigin.split(' ').map(parseFloat);
+                const point = new DOMMatrix(style.transform).transformPoint(new DOMPoint(x - ox, y - oy));
+                [x, y] = [ox + point.x / point.w, oy + point.y / point.w];
+            }
+            marker.style.translate = `${x}px ${y}px`;
+        }
+        requestAnimationFrame(trackFocal);
+        panel.addEventListener('slidechange', () => requestAnimationFrame(locateFocal));
+        new ResizeObserver(() => requestAnimationFrame(locateFocal)).observe(panel);
 
 
         // Transport
