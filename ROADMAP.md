@@ -7,14 +7,14 @@ Versions are targets, not promises. Anything that changes the shape of the API (
 | Version | Theme | Items |
 | --- | --- | --- |
 | **0.8** | The rewrite | Released. See the [changelog](CHANGELOG.md#080---2026-11-14). |
-| **0.9** | Input and slides | [Swipe](#swipe), [focal point](#focal-point), [per-slide interval](#per-slide-interval), [format sources](#format-sources) |
-| **0.10** | Long-running displays and loading | [Reloading the config](#reloading-the-config), [placeholders](#placeholders), [Save-Data](#save-data) |
+| **0.9** | Input and focus | [Swipe](#swipe), [focal point](#focal-point). Also: works under a strict CSP. |
+| **0.10** | Slides, long-running displays and loading | [Per-slide interval](#per-slide-interval), [format sources](#format-sources), [reloading the config](#reloading-the-config), [placeholders](#placeholders), [Save-Data](#save-data) |
 | **1.0** | Stable API | [API review and freeze](#10-api-review-and-freeze) |
 | **1.x** | Additive | [Custom transitions](#custom-transitions), [clock sync](#clock-sync), [focus area](#focus-area), [points of interest](#points-of-interest), [video slides](#video-slides) (undecided) |
 
 ---
 
-## 0.9: Input and slides
+## 0.9: Input and focus
 
 ### Swipe
 
@@ -32,7 +32,7 @@ Navigate with touch, pen and mouse drags, like the arrow keys do with `keyboard`
 
 Mark the part of an image that matters, so cropping, zooming and panning never lose it. Without it, `motion: "random"` can drift off a face, and a narrow panel can crop the subject out.
 
-**Status:** in progress.
+**Status:** done, unreleased (see the changelog). Giving the point a size is the [focus area](#focus-area), in 1.x.
 
 - `focalPoint` slide field (`data-focal-point` on child images), plus a panel-wide `focal-point` attribute and `focalPoint` property as the default, like `position`. (Not `focus`: a `focus` property would shadow `HTMLElement.focus()`.) `"none"` on a slide turns off a panel-wide default.
 - Written like a CSS `background-position`: keywords and percentages, with offsets (`left 30% top 20%`, `25% 40%`, `center`). It names a point in the image, so `25% 40%` is a quarter of the way across and 40% of the way down. A keyword puts the point on that edge (`left` is the left edge), and an offset is measured in from it. Lengths aren't accepted for now: with `srcset` the natural size depends on the candidate loaded. They could come back with a slide width/height field.
@@ -43,6 +43,10 @@ Mark the part of an image that matters, so cropping, zooming and panning never l
 - Precedence: `fill-panel` comes first. If the zoom it needs to keep the panel covered pushes the focal point off-centre, or out of frame, it stays that way.
 - A point says where the subject is but not how big it is. Giving it a size comes later, as a [focus area](#focus-area), and the API here should leave room for it.
 - **Done when:** random motion and `fill-panel` keep the focal point in view across `fit` values and panel shapes, a cover crop centres on it, and there are tests.
+
+---
+
+## 0.10: Slides, long-running displays and loading
 
 ### Per-slide interval
 
@@ -63,10 +67,6 @@ Offer modern formats (AVIF, WebP) with a fallback, which `srcset` can't do on it
 - `metadata` still reads from `src`.
 - **Decision before starting:** whether `media` (art direction) is in scope, given `fit` and `position` are per slide, not per source.
 - **Done when:** the browser picks the right candidate, preload and `slideload` behave as for plain images, and child `<picture>` works without the script.
-
----
-
-## 0.10: Long-running displays and loading
 
 ### Reloading the config
 
