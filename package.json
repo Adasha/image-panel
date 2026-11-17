@@ -30,7 +30,7 @@
     "start": "node scripts/build.js --serve",
     "test": "playwright test",
     "preversion": "npm run build && npm test",
-    "version": "node scripts/changelog.js && git add CHANGELOG.md"
+    "version": "npm run build && node scripts/changelog.js && git add CHANGELOG.md dist"
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
