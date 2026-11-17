@@ -4,6 +4,8 @@ All notable changes to image-panel are recorded here. The format follows [Keep a
 
 ## [Unreleased]
 
+## [0.9.0] - 2026-11-17
+
 ### Added
 
 - `swipe` attribute and property: dragging sideways with touch, pen or mouse navigates, mirrored in right-to-left layouts, without blocking vertical page scrolling. Navigation reports `trigger: 'swipe'`, and auto-advance is held during a drag as a `'swipe'` hold.
@@ -52,5 +54,6 @@ A ground-up rewrite. Most of the API has changed: see [Migrating from 0.3](READM
 
 The original component, before the rewrite. These versions were not tagged.
 
-[Unreleased]: https://github.com/Adasha/image-panel/compare/v0.8.0...HEAD
+[Unreleased]: https://github.com/Adasha/image-panel/compare/v0.9.0...HEAD
+[0.9.0]: https://github.com/Adasha/image-panel/compare/v0.8.0...v0.9.0
 [0.8.0]: https://github.com/Adasha/image-panel/releases/tag/v0.8.0
