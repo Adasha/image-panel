@@ -10,6 +10,8 @@ All notable changes to image-panel are recorded here. The format follows [Keep a
 - `focalPoint` slide field (`data-focal-point`) and panel-wide `focal-point` attribute and property: the part of the image that matters, written like `background-position` with keywords and percentages. Crops on overflowing axes centre on it as far as the image allows, motion pivots on it, and `random` motion zooms about it.
 - `focalRange` slide field (`data-focal-range`) and panel-wide `focal-range` attribute and property: how far `random` motion may take the focal point from the panel centre, as one or two percentages.
 - An optional `origin` in object motion specs, to set the motion's transform origin.
+- A JSON Schema for the config, at `schema/image-panel.schema.json` (`image-panel/schema.json` from npm), with `x-attribute`, `x-inherits` and `x-attributeOnly` annotations for authoring tools.
+- `image-panel/authoring` entry point exporting the internal focal point, fill-panel and metadata helpers, for tools that preview slideshows.
 
 ## [0.8.0] - 2026-11-14
 

@@ -119,6 +119,14 @@ The JSON file and the `config` property share the same shape. Every top-level se
 | | `pause-on-hover` | off | Hold auto-advance while the pointer is over the panel. |
 | | `src` | | URL of a JSON config. |
 
+A [JSON Schema](schema/image-panel.schema.json) describes the config, for validation and editor autocomplete. Point a JSON file at it with `"$schema"`, which the panel ignores:
+
+```json
+{"$schema": "https://unpkg.com/image-panel/schema/image-panel.schema.json", "slides": ["…"]}
+```
+
+From npm it's `image-panel/schema.json`. Besides the usual keywords it carries a few annotations for authoring tools: `x-attribute` gives a setting's attribute name, `x-inherits` the panel setting a slide field overrides, and `x-attributeOnly` the options that have no config key.
+
 ### Slides
 
 A slide can be a plain URL string, or an object with these fields. Child images use `data-*` attributes for the same fields: `data-fit`, `data-flip` and so on.
@@ -355,6 +363,19 @@ playButton.addEventListener('click', () => panel.playing ? panel.pause() : panel
 ```
 
 See [demo/index.html](demo/index.html) for a fuller example, and [demo/playground.html](demo/playground.html) to try every setting live, with an overlay showing each slide's metadata and an event log.
+
+### Authoring tools
+
+For tools that build or preview slideshows, `image-panel/authoring` exports the helpers the panel uses internally, so a preview crops and places images as the panel will:
+
+```js
+import {parseFocalPoint, parseFocalRange, placeFocalPoint, coverPanel, readMetadata} from 'image-panel/authoring';
+
+parseFocalPoint('left 30% top 20%');   // [0.3, 0.2], or null if it isn't a focal point
+const fields = await readMetadata('boat.jpg');   // {title, description, alt, creator, copyright}, as found
+```
+
+It also exports `focalMotion`, `motionCoverZoom` and `clampEasing`. Use them on your own elements rather than the panel's slides. Like the rest of the API, they may change before 1.0.
 
 ## Styling
 
