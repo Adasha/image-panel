@@ -649,8 +649,7 @@
     <script type="module">
         // From src rather than dist, so the preview below shares the panel's own copy of the fill-panel code
         import '../src/image-panel.js';
-        import {coverPanel} from '../src/cover.js';
-        import {parseFocalPoint, placeFocalPoint} from '../src/focus.js';
+        import {coverPanel, parseFocalPoint, placeFocalPoint} from '../src/authoring.js';
 
         const $ = id => document.getElementById(id);
         const panel = $('panel');

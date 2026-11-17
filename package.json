@@ -14,11 +14,14 @@
   "type": "module",
   "exports": {
     ".": "./dist/image-panel.esm.js",
-    "./classic": "./dist/image-panel.js"
+    "./classic": "./dist/image-panel.js",
+    "./authoring": "./src/authoring.js",
+    "./schema.json": "./schema/image-panel.schema.json"
   },
   "module": "./dist/image-panel.esm.js",
   "files": [
     "dist",
+    "schema",
     "src"
   ],
   "sideEffects": true,
@@ -31,6 +34,7 @@
   },
   "devDependencies": {
     "@playwright/test": "1.64.1",
+    "ajv": "8.17.1",
     "esbuild": "0.28.2"
   }
 }

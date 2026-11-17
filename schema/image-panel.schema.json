@@ -1,0 +1,183 @@
+{
+	"$schema": "https://json-schema.org/draft/2020-12/schema",
+	"$id": "https://unpkg.com/image-panel/schema/image-panel.schema.json",
+	"title": "image-panel config",
+	"description": "The shape of an image-panel JSON file and of the `config` property: a settings object, or just an array of slides. Annotations starting `x-` are for authoring tools: `x-attribute` is a setting's HTML attribute, `x-inherits` names the panel setting a slide field overrides, and `x-attributeOnly` lists options that only exist as attributes.",
+	"anyOf": [
+		{"$ref": "#/$defs/config"},
+		{"$ref": "#/$defs/slides"}
+	],
+	"x-attributeOnly": {
+		"keyboard": {"type": "boolean", "default": false, "description": "Arrow keys, Home and End navigate. Makes the panel focusable."},
+		"swipe": {"type": "boolean", "default": false, "description": "Dragging sideways with touch, pen or mouse navigates. Vertical drags still scroll the page."},
+		"pause-on-hover": {"type": "boolean", "default": false, "description": "Hold auto-advance while the pointer is over the panel."},
+		"src": {"type": "string", "description": "URL of a JSON config."}
+	},
+	"$defs": {
+		"config": {
+			"type": "object",
+			"description": "Every setting is optional, and attributes take priority over config values.",
+			"properties": {
+				"$schema": {"type": "string", "description": "Ignored by the panel. Lets editors find this schema."},
+				"basePath": {
+					"type": "string",
+					"description": "Prefix for slide URLs. Relative paths resolve against the JSON file's URL, or the page for inline config."
+				},
+				"autoplay": {"type": "boolean", "default": false, "x-attribute": "autoplay", "description": "Start advancing automatically."},
+				"interval": {"type": "number", "minimum": 0, "default": 6000, "x-attribute": "interval", "description": "Milliseconds each slide is shown for, after its transition finishes."},
+				"transition": {"$ref": "#/$defs/transition", "default": "fade", "x-attribute": "transition", "description": "Default transition for slides without their own."},
+				"transitionEasing": {"$ref": "#/$defs/easing", "default": "ease-in-out", "x-attribute": "transition-easing", "description": "Easing for wipe, slide and push transitions: any CSS easing function."},
+				"transitionDuration": {"type": "number", "minimum": 0, "default": 1000, "x-attribute": "transition-duration", "description": "Transition length in ms. 0 for a hard cut. Always 0 when the user prefers reduced motion."},
+				"shuffle": {"type": "boolean", "default": false, "x-attribute": "shuffle", "description": "Shuffle the slides when loaded."},
+				"loop": {"type": "boolean", "default": true, "x-attribute": "loop", "description": "Wrap round from the last slide to the first, and back."},
+				"startIndex": {"type": "integer", "minimum": 0, "default": 0, "x-attribute": "start-index", "description": "First slide to show."},
+				"fit": {"$ref": "#/$defs/fit", "default": "cover", "x-attribute": "fit", "description": "Default object-fit for slides."},
+				"position": {"$ref": "#/$defs/position", "default": "center", "x-attribute": "position", "description": "Default object-position for slides."},
+				"focalPoint": {"$ref": "#/$defs/focalPoint", "x-attribute": "focal-point", "description": "Default focal point for slides."},
+				"focalRange": {"$ref": "#/$defs/focalRange", "default": "0%", "x-attribute": "focal-range", "description": "Default focal range: how far random motion may take the focal point from the centre."},
+				"sizes": {"type": "string", "x-attribute": "sizes", "description": "Default `sizes` for slides with a srcset. Defaults to the panel's rendered width."},
+				"fillPanel": {"type": "boolean", "default": false, "x-attribute": "fill-panel", "description": "Never show the panel background behind a slide."},
+				"metadata": {"type": "boolean", "default": false, "x-attribute": "metadata", "description": "Fill in missing slide fields from each image's XMP, IPTC and EXIF metadata."},
+				"motion": {"$ref": "#/$defs/motion", "x-attribute": "motion", "description": "Default motion for slides without their own. Only string values can be set as an attribute."},
+				"slides": {"$ref": "#/$defs/slides"}
+			},
+			"additionalProperties": false
+		},
+
+		"slides": {
+			"type": "array",
+			"items": {"$ref": "#/$defs/slide"}
+		},
+
+		"slide": {
+			"description": "A plain image URL, or an object. Fields not listed here are kept and passed back in events, for your own captions and credits.",
+			"anyOf": [
+				{"type": "string", "minLength": 1},
+				{
+					"type": "object",
+					"required": ["src"],
+					"properties": {
+						"src": {"type": "string", "minLength": 1, "description": "Image URL."},
+						"srcset": {"type": "string", "description": "Responsive image candidates, as on <img>."},
+						"sizes": {"type": "string", "x-inherits": "sizes", "description": "As on <img>."},
+						"alt": {"type": "string", "description": "Alt text. Falls back to title. Use \"\" for purely decorative images."},
+						"title": {"type": "string", "description": "Not displayed. Passed back in events."},
+						"description": {"type": "string", "description": "Not displayed. Passed back in events."},
+						"creator": {"type": "string", "description": "Not displayed. Passed back in events."},
+						"copyright": {"type": "string", "description": "Not displayed. Passed back in events."},
+						"fit": {"$ref": "#/$defs/fit", "x-inherits": "fit"},
+						"position": {"$ref": "#/$defs/position", "x-inherits": "position"},
+						"focalPoint": {"$ref": "#/$defs/focalPoint", "x-inherits": "focalPoint", "description": "The part of the image that matters. \"none\" turns off a panel-wide default."},
+						"focalRange": {"$ref": "#/$defs/focalRange", "x-inherits": "focalRange"},
+						"flip": {"enum": ["horizontal", "vertical", "both"]},
+						"transform": {"type": "string", "description": "Any CSS transform. Applied before flip.", "examples": ["scale(1.2) rotate(-4deg)"]},
+						"clip": {"type": "string", "description": "Any CSS clip-path.", "examples": ["inset(5% round 8px)"]},
+						"transition": {"$ref": "#/$defs/transition", "x-inherits": "transition", "description": "How this slide transitions in."},
+						"transitionEasing": {"$ref": "#/$defs/easing", "x-inherits": "transitionEasing"},
+						"motion": {"$ref": "#/$defs/motion", "x-inherits": "motion", "description": "false or \"none\" turns off a panel-wide default."},
+						"style": {"type": "string", "description": "Raw inline CSS for the <img>. The fields above take priority."}
+					}
+				}
+			]
+		},
+
+		"fit": {"enum": ["cover", "contain", "fill", "none", "scale-down"]},
+
+		"position": {
+			"type": "string",
+			"description": "A CSS object-position.",
+			"examples": ["center", "left 20%", "30% 70%"]
+		},
+
+		"focalPoint": {
+			"type": "string",
+			"description": "A point in the image, written like background-position with keywords and percentages (no lengths). `25% 40%` is a quarter of the way across and 40% down. Check values with parseFocalPoint from image-panel/authoring.",
+			"examples": ["50% 30%", "left 30% top 20%", "center", "none"]
+		},
+
+		"focalRange": {
+			"type": "string",
+			"description": "One percentage for both axes, or horizontal then vertical, from 0% (as central as possible) to 100% (anywhere in frame).",
+			"pattern": "^\\s*(\\d+\\.?\\d*|\\.\\d+)%(\\s+(\\d+\\.?\\d*|\\.\\d+)%)?\\s*$",
+			"examples": ["0%", "40% 10%"]
+		},
+
+		"easing": {
+			"type": "string",
+			"description": "Any CSS easing function.",
+			"examples": ["ease-in-out", "linear", "cubic-bezier(0.2, 0, 0, 1)"]
+		},
+
+		"transition": {
+			"description": "A transition name and its options, separated by spaces, or false for a hard cut.",
+			"anyOf": [
+				{"const": false},
+				{
+					"type": "string",
+					"pattern": "^\\s*(fade|dissolve|dip|wipe|slide|push|none|cut)(\\s.*)?$"
+				}
+			],
+			"examples": ["fade", "dip white", "wipe left 10%", "slide random", "push cardinal", "none"],
+			"x-types": {
+				"fade": {"options": [], "aliases": ["dissolve"], "description": "Cross-fade."},
+				"dip": {"options": ["color"], "description": "Fade out to a colour, then in from it. Without one it uses --image-panel-dip-color (black)."},
+				"wipe": {"options": ["direction", "feather"], "description": "An edge sweeps across. The feather is a CSS length, or a bare number in px."},
+				"slide": {"options": ["direction"], "description": "The new slide slides in over the old one."},
+				"push": {"options": ["direction"], "directions": "cardinal", "description": "The new slide pushes the old one out. Cardinal directions only."},
+				"none": {"options": [], "aliases": ["cut"], "description": "A hard cut."}
+			},
+			"x-directions": {
+				"cardinal": ["left", "right", "up", "down"],
+				"diagonal": ["up-left", "up-right", "down-left", "down-right"],
+				"sets": {
+					"random": "any direction, picked each time",
+					"cardinal": "a random cardinal direction",
+					"diagonal": "a random diagonal direction"
+				},
+				"default": "follows navigation: left going forward, right going back, mirrored right to left"
+			}
+		},
+
+		"motion": {
+			"description": "A slow pan or zoom over the slide's time on screen (both transitions plus the interval).",
+			"anyOf": [
+				{"enum": ["random", "none", false]},
+				{"$ref": "#/$defs/motionFrames"},
+				{
+					"type": "object",
+					"required": ["from", "to"],
+					"properties": {
+						"from": {"$ref": "#/$defs/motionFrame"},
+						"to": {"$ref": "#/$defs/motionFrame"},
+						"easing": {"$ref": "#/$defs/easing", "default": "linear"},
+						"origin": {"type": "string", "description": "A CSS transform-origin. Defaults to the focal point, or the centre."}
+					},
+					"additionalProperties": false
+				},
+				{
+					"type": "object",
+					"required": ["keyframes"],
+					"properties": {
+						"keyframes": {"$ref": "#/$defs/motionFrames"},
+						"easing": {"$ref": "#/$defs/easing", "default": "linear"},
+						"origin": {"type": "string", "description": "A CSS transform-origin. Defaults to the focal point, or the centre."}
+					},
+					"additionalProperties": false
+				}
+			],
+			"examples": ["random", ["scale(1.15) translate(-3%, 2%)", "scale(1)"], {"from": "scale(1)", "to": "scale(1.2)", "easing": "ease-out"}]
+		},
+
+		"motionFrames": {
+			"type": "array",
+			"minItems": 2,
+			"items": {"$ref": "#/$defs/motionFrame"},
+			"description": "CSS transforms, spread evenly over the motion."
+		},
+
+		"motionFrame": {
+			"description": "A CSS transform. Empty or null means none.",
+			"type": ["string", "null"]
+		}
+	}
+}
