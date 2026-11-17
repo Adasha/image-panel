@@ -64,8 +64,8 @@ const UPGRADABLE = [
 ];
 
 const template = document.createElement('template');
-template.innerHTML = `
-<style>
+const templateCSS = new CSSStyleSheet();
+templateCSS.replaceSync(/* css */ `
     :host {
         display: block;
         position: relative;
@@ -112,9 +112,10 @@ template.innerHTML = `
         object-fit: var(--image-panel-fit, cover);
         object-position: var(--image-panel-position, center);
     }
-</style>
-<div class="slides"></div>
-<div class="dip" part="dip"></div>
+`);
+template.innerHTML = `
+    <div class="slides"></div>
+    <div class="dip" part="dip"></div>
 `;
 
 
@@ -193,6 +194,7 @@ export class ImagePanel extends HTMLElement
         super();
 
         this.#root.append(template.content.cloneNode(true));
+        this.#root.adoptedStyleSheets = [templateCSS];
         this.#stage = this.#root.querySelector('.slides');
         this.#dip = this.#root.querySelector('.dip');
 

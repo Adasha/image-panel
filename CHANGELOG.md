@@ -13,6 +13,10 @@ All notable changes to image-panel are recorded here. The format follows [Keep a
 - A JSON Schema for the config, at `schema/image-panel.schema.json` (`image-panel/schema.json` from npm), with `x-attribute`, `x-inherits` and `x-attributeOnly` annotations for authoring tools.
 - `image-panel/authoring` entry point exporting the internal focal point, fill-panel and metadata helpers, for tools that preview slideshows.
 
+### Changed
+
+- The shadow root's styles are now a constructable stylesheet shared by every panel, rather than a `<style>` element in each. Pages with a Content Security Policy no longer need `style-src 'unsafe-inline'` for the component.
+
 ## [0.8.0] - 2026-11-14
 
 A ground-up rewrite. Most of the API has changed: see [Migrating from 0.3](README.md#migrating-from-03).

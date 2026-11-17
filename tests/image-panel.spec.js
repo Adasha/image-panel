@@ -1627,6 +1627,53 @@ test.describe('accessibility', () => {
 });
 
 
+test.describe('styles', () => {
+    test('shares one adopted stylesheet between panels, with no <style> in the shadow root', async ({page}) => {
+        const panel = await mount(page, '<image-panel transition-duration="0"></image-panel><image-panel></image-panel>');
+        await setConfig(panel, [IMAGES[0]]);
+        await expect(panel.locator('img')).toHaveCount(1);
+
+        const result = await page.evaluate(() => {
+            const [a, b] = document.querySelectorAll('image-panel');
+            return {
+                styles: [a, b].map(el => el.shadowRoot.querySelectorAll('style').length),
+                sheets: [a, b].map(el => el.shadowRoot.adoptedStyleSheets.length),
+                shared: a.shadowRoot.adoptedStyleSheets[0] === b.shadowRoot.adoptedStyleSheets[0],
+            };
+        });
+        expect(result).toEqual({styles: [0, 0], sheets: [1, 1], shared: true});
+
+        // And the sheet applies
+        expect(await panel.evaluate(el => [
+            getComputedStyle(el).display,
+            getComputedStyle(el.shadowRoot.querySelector('img')).position,
+        ])).toEqual(['block', 'absolute']);
+    });
+
+    test('works under a CSP without style-src \'unsafe-inline\'', async ({page}) => {
+        const errors = [];
+        page.on('pageerror', error => errors.push(error.message));
+        // Init scripts aren't subject to the page's CSP, and run before any of its own scripts
+        await page.addInitScript(() => {
+            window.violations = [];
+            document.addEventListener('securitypolicyviolation', e => window.violations.push(`${e.violatedDirective} ${e.blockedURI}`));
+        });
+
+        await page.goto('/tests/csp.html');
+        const panel = page.locator('image-panel');
+        await expect.poll(() => currentIndex(panel)).toBe(0);
+        expect(await panel.evaluate(el => getComputedStyle(el).overflow)).toBe('hidden');
+
+        // A wipe sets a mask, and the slide sets fit and transform, all through the CSSOM
+        await panel.evaluate(el => el.next());
+        await expect.poll(() => currentIndex(panel)).toBe(1);
+        await expect(panel.locator('.slide')).toHaveCount(1);
+
+        expect(await page.evaluate(() => window.violations)).toEqual([]);
+        expect(errors).toEqual([]);
+    });
+});
+
 test('demo page runs from the built dist file', async ({page}) => {
     const errors = [];
     page.on('pageerror', error => errors.push(error));

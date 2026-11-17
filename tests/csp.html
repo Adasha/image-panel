@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <!-- No 'unsafe-inline': the panel must work with no inline <style> and no style="" attributes -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; style-src 'self'">
+    <title>image-panel CSP fixture</title>
+    <link rel="stylesheet" href="csp.css">
+</head>
+<body>
+    <image-panel transition="wipe" transition-duration="200">
+        <img src="/demo/images/Markermeer.jpg" alt="Lake">
+        <img src="/demo/images/BigPit-ChainMacro.jpg" alt="Chain" data-fit="contain" data-transform="rotate(5deg)">
+    </image-panel>
+    <script type="module" src="/src/image-panel.js"></script>
+</body>
+</html>

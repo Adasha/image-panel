@@ -379,7 +379,7 @@ It also exports `focalMotion`, `motionCoverZoom` and `clampEasing`. Use them on 
 
 ## Styling
 
-The component renders into an open shadow root.
+The component renders into an open shadow root. Its styles are a constructable stylesheet shared by every panel, and everything else it styles (including a slide's `style` field) goes through the CSSOM, so it works under a Content Security Policy without `style-src 'unsafe-inline'`.
 
 - `::part(slide)` targets the wrapper that transitions and clips the slide to the panel, `::part(motion)` the wrapper inside it that carries any `motion`, and `::part(image)` the `<img>` inside that.
 - `::part(dip)` is the colour layer a `dip` transition fades through.
